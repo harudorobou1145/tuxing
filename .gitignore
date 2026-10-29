@@ -1,0 +1,13 @@
+/build*/
+/.vs/
+/.cache/
+*.exe
+*.obj
+!model/**/*.obj
+*.o
+*.pdb
+*.ilk
+*.dll
+*.user
+.DS_Store
+/captures/
