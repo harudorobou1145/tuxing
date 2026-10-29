@@ -4,6 +4,7 @@
 #include "Mesh.hpp"
 #include "Shader.hpp"
 #include "Timeline.hpp"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -42,8 +43,16 @@ public:
 void run(GLFWwindow* window) {
     const std::string root = PROJECT_ROOT;
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
-    Mesh lantern(root + "/model/lantern.obj");
-    Mesh ground(root + "/model/ground.obj");
+    Mesh gate(root + "/model/tiananmen/tiananmen_gate.obj");
+    const glm::vec3 gateSize = gate.maximum() - gate.minimum();
+    const glm::vec3 gateMiddle = (gate.minimum() + gate.maximum()) * 0.5f;
+    const float gateScale = 8.0f / gateSize.y;
+    const float gateWidth = gateSize.x * gateScale;
+    const float gateHeight = gateSize.y * gateScale;
+    // Centre the gate on the origin and rest its lowest point on y = 0.
+    glm::mat4 gateModel = glm::scale(glm::mat4(1.0f), glm::vec3(gateScale));
+    gateModel = glm::translate(gateModel, glm::vec3(-gateMiddle.x, -gate.minimum().y, -gateMiddle.z));
+    Mesh ground(gateWidth * 2.2f);
     Texture texture;
     glEnable(GL_DEPTH_TEST);
     double previous = glfwGetTime();
@@ -71,30 +80,23 @@ void run(GLFWwindow* window) {
         glClearColor(0.075f, 0.10f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         const float progress = animation::progress(seconds);
-        const glm::vec3 camera(9.0f * std::sin(0.35f + progress * 0.5f), 5.0f, 11.0f * std::cos(0.35f + progress * 0.5f));
+        const float angle = 0.35f + progress * 0.5f;
+        const float radius = gateWidth * 1.15f;
+        const glm::vec3 camera(radius * std::sin(angle), gateHeight * 0.9f, radius * std::cos(angle));
         shader.use();
-        shader.matrix("view", glm::lookAt(camera, glm::vec3(0, 2, 0), glm::vec3(0, 1, 0)));
-        shader.matrix("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(width) / height, 0.1f, 100.0f));
+        shader.matrix("view", glm::lookAt(camera, glm::vec3(0.0f, gateHeight * 0.45f, 0.0f), glm::vec3(0, 1, 0)));
+        shader.matrix("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(width) / height, 0.1f, radius * 6.0f));
         shader.vector("cameraPosition", camera);
-        shader.vector("lightPosition", glm::vec3(2, 7, 5));
+        shader.vector("lightPosition", glm::vec3(gateWidth * 0.8f, gateHeight * 2.2f, gateWidth * 1.2f));
         shader.integer("diffuseMap", 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture.handle);
-        shader.vector("tint", glm::vec3(0.32f, 0.65f, 0.8f));
-        shader.matrix("model", glm::mat4(1.0f));
+        shader.vector("tint", glm::vec3(0.30f, 0.33f, 0.38f));
+        shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
         ground.draw();
         shader.vector("tint", glm::vec3(1.0f));
-        for (int index = 0; index < 7; ++index) {
-            const auto point = animation::bezier(progress);
-            const glm::vec3 position = index == 0
-                ? glm::vec3(point.x, point.y, point.z)
-                : glm::vec3((index - 3.5f) * 1.5f, 1.5f + 0.15f * std::sin(seconds + index), -2.5f);
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), position);
-            model = glm::rotate(model, 0.1f * std::sin(seconds + index), glm::vec3(0, 0, 1));
-            model = glm::scale(model, glm::vec3(0.6f, 0.85f, 0.6f));
-            shader.matrix("model", model);
-            lantern.draw();
-        }
+        shader.matrix("model", gateModel);
+        gate.draw();
         const std::string title = "Lantern Festival | " + std::to_string(seconds).substr(0, 4) + " / 25 s" + (paused ? " | Paused" : "");
         glfwSetWindowTitle(window, title.c_str());
         glfwSwapBuffers(window);

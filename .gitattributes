@@ -1,1 +1,2 @@
-model/**/*.obj filter=lfs diff=lfs merge=lfs -text
+# 只有这个 572 MB 的原始场景需要 LFS；提取出来的小模型继续走普通 git。
+model/tiananmen/Tiananmen+Square+3D+Scene2.obj filter=lfs diff=lfs merge=lfs -text

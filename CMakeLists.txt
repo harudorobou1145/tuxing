@@ -16,8 +16,6 @@ add_test(NAME timeline COMMAND timeline_test)
 option(BUILD_SCENE "Build the OpenGL scene (requires dependency downloads)" ON)
 if(BUILD_SCENE)
     include(FetchContent)
-    # glew-cmake 2.2.0 and glm 1.0.1 still declare cmake_minimum_required below 3.5,
-    # which CMake 4 refuses to configure.
     if(NOT CMAKE_POLICY_VERSION_MINIMUM)
         set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     endif()
@@ -31,8 +29,6 @@ if(BUILD_SCENE)
     FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 1.0.1 GIT_SHALLOW TRUE)
     FetchContent_Declare(tinyobjloader GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git GIT_TAG v2.0.0rc13 GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(glfw glew glm tinyobjloader)
-    # glew-cmake unconditionally links the AGL framework on Apple, but AGL was
-    # removed from modern macOS and linking fails with "framework 'AGL' not found".
     if(APPLE)
         foreach(_glew_target libglew_static)
             get_target_property(_glew_libs ${_glew_target} INTERFACE_LINK_LIBRARIES)
