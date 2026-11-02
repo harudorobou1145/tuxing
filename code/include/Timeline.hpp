@@ -3,7 +3,7 @@
 #include <algorithm>
 
 namespace animation {
-constexpr float duration = 25.0f;
+constexpr float duration = 30.0f;
 
 struct Point {
     float x, y, z;
@@ -52,7 +52,7 @@ inline Shot shot(float seconds) {
     const Point cameras[] = {{-9, 7, 27}, {0, 3.8f, 16}, {-13, 3.5f, 15},
                              {-4, 3.5f, 15}, {4.8f, 6.8f, 10.5f}, {2, 5, 16}};
     const Point targets[] = {{0, 2, 0}, {0, 1.8f, 0}, {-17.1f, 1, 5},
-                             {-8.6f, 1, 5}, {3.6f, 6.6f, 8}, {0, 13, 0}};
+                             {-8.6f, 1, 5}, {3.6f, 6.6f, 8}, {0, 24, 0}};
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(time / 5.0f), 4);
     float parameter = segment(time, index * 5.0f, (index + 1) * 5.0f);
@@ -62,7 +62,11 @@ inline Shot shot(float seconds) {
 }
 
 inline Point aircraft(float seconds) {
-    return curve({-18, 13, -6}, {-8, 15, 0}, {8, 14, 5}, {20, 12, -2},
-                 segment(seconds, 20.0f, 25.0f));
+    if (seconds <= 25.0f) {
+        return curve({-18, 24, -6}, {-8, 26, 0}, {8, 25, 5}, {20, 23, -2},
+                     segment(seconds, 20.0f, 25.0f));
+    }
+    return curve({20, 23, -2}, {20, 28, -10}, {18, 36, -22}, {15, 46, -36},
+                 segment(seconds, 25.0f, 30.0f));
 }
 }

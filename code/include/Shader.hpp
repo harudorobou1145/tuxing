@@ -13,6 +13,7 @@ public:
     void matrix(const char* name, const glm::mat4& value) const;
     void vector(const char* name, const glm::vec3& value) const;
     void integer(const char* name, int value) const;
+    void floating(const char* name, float value) const;
 private:
     GLuint program = 0;
 };

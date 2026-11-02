@@ -61,6 +61,15 @@ glm::mat4 placement(const Mesh& mesh, glm::vec3 position, float size, float yaw 
     return glm::translate(transform, glm::vec3(-center.x, -mesh.minimum().y, -center.z));
 }
 
+glm::vec3 aircraftPosition(float t, int wing) {
+    const auto point = vector(animation::aircraft(t));
+    const auto tangent = vector(animation::aircraft(std::min(30.0f, t + 0.02f)))
+        - vector(animation::aircraft(std::max(20.0f, t - 0.02f)));
+    const glm::vec3 forward = glm::length(tangent) > 0.001f ? glm::normalize(tangent) : glm::vec3(1, 0, 0);
+    const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
+    return point - std::abs(wing) * 2.5f * forward + wing * 2.2f * right;
+}
+
 void run(GLFWwindow* window, const std::string& modelPath, const std::string& captureDirectory) {
     const std::string root = PROJECT_ROOT;
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
@@ -87,8 +96,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh aircraft(root + "/model/j20/j-20_stealth_fighter_aircraft.obj");
     Mesh soldier(root + "/model/solider/source/\xe6\x9c\xaa\xe5\x91\xbd\xe5\x90\x8d.obj");
     Mesh cube(root + "/model/demo/cube.obj");
-    Mesh ground(55.0f, 36);
+    Mesh ground(100.0f, 36);
     Mesh flag(2.4f, 1.6f, 64, 32);
+    Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Texture gateTexture;
     Texture white(1);
     Texture paving(2);
@@ -100,7 +110,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 5> captureTimes = {2.5f, 7.5f, 12.5f, 19.5f, 23.0f};
+    const std::array<float, 6> captureTimes = {2.5f, 7.5f, 12.5f, 19.5f, 23.0f, 28.0f};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -144,7 +154,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(bump ? 1 : 0, 0, 0));
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
-        if (!fullScene || coreScene) ground.draw(shader, paving.handle, glm::vec3(0.92f));
+        ground.draw(shader, paving.handle, glm::vec3(0.92f));
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
         gate.draw(shader, fullScene ? white.handle : gateTexture.handle, glm::vec3(1));
@@ -162,21 +172,21 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         for (int stripe = -12; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.025f, 6}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         for (std::size_t index = 0; index < tanks.size(); ++index) {
-            const float horizontal = -10.0f + (seconds - 3.0f) * 1.7f - index * 5.0f;
+            const float horizontal = -10.0f + (seconds - 3.0f) * 1.7f - index * 7.0f;
             const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
-            const float localSpeed = 1.7f * std::max({extent.x, extent.y, extent.z}) / 3.5f;
+            const float localSpeed = 1.7f * std::max({extent.x, extent.y, extent.z}) / 6.0f;
             shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
-            shader.matrix("model", placement(*tanks[index], {horizontal, 0.03f, 5}, 3.5f, glm::radians(180.0f)));
+            shader.matrix("model", placement(*tanks[index], {horizontal, 0.03f, 5}, 6.0f, glm::radians(180.0f)));
             tanks[index]->draw(shader, white.handle, glm::vec3(1));
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        for (int row = 0; row < 5; ++row) {
+        for (int row = 0; row < 25; ++row) {
             for (int column = 0; column < 4; ++column) {
-                const float lastTank = -10.0f + (seconds - 3.0f) * 1.7f - 15.0f;
-                const float horizontal = lastTank - 4.0f - row * 0.9f;
-                const float depth = 5.0f + (column - 1.5f) * 0.65f;
+                const float lastTank = -10.0f + (seconds - 3.0f) * 1.7f - 21.0f;
+                const float horizontal = lastTank - 6.0f - row * 1.2f;
+                const float depth = 5.0f + (column - 1.5f) * 0.8f;
                 shader.vector("animationState", glm::vec3(seconds, -1, 0));
-                shader.matrix("model", placement(soldier, {horizontal, 0.03f, depth}, 1.8f, glm::radians(90.0f)));
+                shader.matrix("model", placement(soldier, {horizontal, 0.03f, depth}, 1.7f, glm::radians(90.0f)));
                 soldier.draw(shader, white.handle, glm::vec3(1));
             }
         }
@@ -188,16 +198,97 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         flag.draw(shader, white.handle, glm::vec3(1));
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(0));
+        // Fireworks behind Tiananmen: launch -> rise -> burst, varied rhythm/size.
+        {
+            struct Firework {
+                glm::vec3 launch;
+                glm::vec3 peak;
+                glm::vec3 color;
+                float period;
+                float offset;
+                float rise;
+                float radius;
+                int streaks;
+            };
+            const std::array<Firework, 6> fireworks = {{
+                {glm::vec3(-14, 2, -10), glm::vec3(-13, 12, -9),  glm::vec3(1.0f, 0.80f, 0.30f), 3.6f, 0.0f, 1.3f, 6.0f, 26},
+                {glm::vec3(-6, 2, -13),  glm::vec3(-5, 9, -12),   glm::vec3(1.0f, 0.30f, 0.25f), 2.9f, 0.7f, 1.0f, 4.5f, 20},
+                {glm::vec3(2, 2, -15),   glm::vec3(3, 13, -14),   glm::vec3(0.35f, 0.60f, 1.0f), 4.3f, 1.5f, 1.5f, 7.5f, 30},
+                {glm::vec3(12, 2, -8),   glm::vec3(13, 10, -7),   glm::vec3(0.30f, 0.95f, 0.40f), 3.2f, 2.2f, 1.1f, 5.0f, 22},
+                {glm::vec3(-9, 2, -7),   glm::vec3(-8, 11, -6),   glm::vec3(1.0f, 0.40f, 0.65f), 3.8f, 1.1f, 1.4f, 6.5f, 28},
+                {glm::vec3(8, 2, -16),   glm::vec3(9, 8, -15),    glm::vec3(1.0f, 0.90f, 0.35f), 2.6f, 1.9f, 0.9f, 3.5f, 16},
+            }};
+            const glm::vec3 fwForward = glm::normalize(target - camera);
+            const glm::vec3 fwRight = glm::normalize(glm::cross(fwForward, glm::vec3(0, 1, 0)));
+            const glm::vec3 fwUp = glm::cross(fwRight, fwForward);
+            const auto puff = [&](const glm::vec3& pos, float size, const glm::vec3& color, float alpha) {
+                shader.vector("tint", color);
+                shader.floating("smokeAlpha", alpha);
+                glm::mat4 b(1.0f);
+                b[0] = glm::vec4(fwRight * size, 0.0f);
+                b[1] = glm::vec4(fwUp * size, 0.0f);
+                b[2] = glm::vec4(fwForward, 0.0f);
+                b[3] = glm::vec4(pos, 1.0f);
+                b = glm::translate(b, glm::vec3(-0.5f, -0.5f, 0.0f));
+                shader.matrix("model", b);
+                smokeQuad.draw();
+            };
+            glBindTexture(GL_TEXTURE_2D, white.handle);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            shader.integer("unlit", 1);
+            for (const auto& fw : fireworks) {
+                const float t = std::fmod(seconds + fw.offset, fw.period);
+                if (t < fw.rise) {
+                    // 上升阶段：火箭头 + 尾迹
+                    const float p = t / fw.rise;
+                    const glm::vec3 pos = glm::mix(fw.launch, fw.peak, p);
+                    const glm::vec3 step = fw.peak - fw.launch;
+                    for (int k = 1; k <= 4; ++k) {
+                        const glm::vec3 trail = pos - step * (0.4f * k);
+                        puff(trail, 0.35f, glm::vec3(1.0f, 0.85f, 0.55f), 0.5f * (1.0f - k / 5.0f));
+                    }
+                    puff(pos, 0.55f, glm::vec3(1.0f, 0.92f, 0.70f), 0.95f);
+                } else {
+                    // 绽放阶段：火花散开
+                    const float burst = fw.period - fw.rise;
+                    const float bp = (t - fw.rise) / burst;
+                    if (bp >= 1.0f) continue;
+                    const float radius = fw.radius * bp;
+                    const float alpha = 1.0f - bp * bp;
+                    const float droop = 2.5f * bp * bp;
+                    for (int m = 0; m < fw.streaks; ++m) {
+                        const float angle = 6.28318f * m / fw.streaks;
+                        const float scatter = 1.0f + 0.18f * std::sin(m * 2.7f + fw.streaks);
+                        const glm::vec3 dir = fwRight * std::cos(angle) + fwUp * std::sin(angle);
+                        const float r = radius * scatter;
+                        puff(fw.peak + dir * r - fwUp * droop, 0.8f, fw.color, alpha);
+                        for (int k = 1; k <= 3; ++k) {
+                            const float tailR = r - 0.5f * k;
+                            if (tailR < 0.1f) break;
+                            const float tailSize = 0.8f * (1.0f - 0.28f * k);
+                            puff(fw.peak + dir * tailR - fwUp * droop, tailSize, fw.color, alpha * (1.0f - 0.25f * k));
+                        }
+                    }
+                    if (bp < 0.2f) puff(fw.peak, 1.3f, glm::vec3(1.0f), 0.9f * (1.0f - bp / 0.2f));
+                }
+            }
+            shader.floating("smokeAlpha", 1.0f);
+            shader.integer("unlit", 0);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+        }
         if (seconds >= 19.5f) {
             const auto point = vector(animation::aircraft(seconds));
-            const auto tangent = vector(animation::aircraft(std::min(25.0f, seconds + 0.02f)))
+            const auto tangent = vector(animation::aircraft(std::min(30.0f, seconds + 0.02f)))
                 - vector(animation::aircraft(std::max(20.0f, seconds - 0.02f)));
             const float yaw = glm::length(tangent) > 0.001f ? std::atan2(tangent.x, tangent.z) : glm::radians(90.0f);
             const glm::vec3 forward = glm::length(tangent) > 0.001f ? glm::normalize(tangent) : glm::vec3(1, 0, 0);
             const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
             const float pitch = -std::atan2(forward.y, glm::length(glm::vec2(forward.x, forward.z)));
-            for (int wing = -1; wing <= 1; ++wing) {
-                const glm::vec3 offset = (wing == 0 ? 0.0f : -2.5f) * forward + wing * 2.8f * right;
+            for (int wing = -2; wing <= 2; ++wing) {
+                const glm::vec3 offset = -std::abs(wing) * 2.5f * forward + wing * 2.2f * right;
                 glm::mat4 flight = glm::translate(glm::mat4(1), point + offset);
                 flight = glm::rotate(flight, yaw, glm::vec3(0, 1, 0));
                 flight = glm::rotate(flight, pitch, glm::vec3(1, 0, 0));
@@ -205,6 +296,49 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 shader.matrix("model", flight * placement(aircraft, glm::vec3(0), 3.4f));
                 aircraft.draw(shader, white.handle, glm::vec3(0.88f));
             }
+            // Colored smoke trails behind each aircraft.
+            const std::array<glm::vec3, 5> smokeColors = {
+                glm::vec3(0.85f, 0.10f, 0.10f),
+                glm::vec3(0.95f, 0.82f, 0.10f),
+                glm::vec3(0.05f, 0.15f, 0.75f),
+                glm::vec3(0.10f, 0.80f, 0.30f),
+                glm::vec3(0.95f, 0.95f, 0.95f),
+            };
+            const glm::vec3 camForward = glm::normalize(target - camera);
+            const glm::vec3 camRight = glm::normalize(glm::cross(camForward, glm::vec3(0, 1, 0)));
+            const glm::vec3 camUp = glm::cross(camRight, camForward);
+            glBindTexture(GL_TEXTURE_2D, white.handle);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            shader.integer("unlit", 1);
+            const int segments = 40;
+            const float trailDuration = 2.5f;
+            for (int wing = -2; wing <= 2; ++wing) {
+                shader.vector("tint", smokeColors[wing + 2]);
+                for (int k = 0; k < segments; ++k) {
+                    const float tFar = seconds - trailDuration * (k + 1) / segments;
+                    const float tNear = seconds - trailDuration * k / segments;
+                    const float age = (k + 0.5f) / segments;
+                    glm::vec3 mid = (aircraftPosition(tFar, wing) + aircraftPosition(tNear, wing)) * 0.5f;
+                    mid += camRight * (std::sin(seconds * 3.0f + wing * 1.3f + k * 0.6f) * 0.4f * age);
+                    mid += camUp * (std::sin(seconds * 2.2f + k * 0.45f) * 0.25f * age);
+                    const float puffWidth = 0.35f + 1.1f * age;
+                    shader.floating("smokeAlpha", 1.0f - age * age);
+                    glm::mat4 billboard(1.0f);
+                    billboard[0] = glm::vec4(camRight * puffWidth, 0.0f);
+                    billboard[1] = glm::vec4(camUp * puffWidth, 0.0f);
+                    billboard[2] = glm::vec4(camForward, 0.0f);
+                    billboard[3] = glm::vec4(mid, 1.0f);
+                    billboard = glm::translate(billboard, glm::vec3(-0.5f, -0.5f, 0.0f));
+                    shader.matrix("model", billboard);
+                    smokeQuad.draw();
+                }
+            }
+            shader.floating("smokeAlpha", 1.0f);
+            shader.integer("unlit", 0);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
         }
         const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast"};
         const std::string title = "Parade Animation | " + std::string(names[shot.index]) + " | "

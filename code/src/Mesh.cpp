@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 namespace {
@@ -35,6 +36,10 @@ void upload(const std::vector<Vertex>& vertices, GLuint& vertexArray, GLuint& ve
     glEnableVertexAttribArray(2);
     glBindVertexArray(0);
 }
+
+bool isFence(const std::string& name) {
+    return name.find("Fence") != std::string::npos || name.find("fence") != std::string::npos;
+}
 }
 
 Mesh::Mesh(const std::string& objPath) {
@@ -42,18 +47,16 @@ Mesh::Mesh(const std::string& objPath) {
     tinyobj::ObjReaderConfig config;
     config.triangulate = true;
     const bool soldier = objPath.find("/solider/") != std::string::npos;
-    bool loaded = false;
-    if (soldier) {
-        const auto path = std::filesystem::u8path(objPath);
-        std::ifstream objFile(path);
-        auto materialPath = path;
-        materialPath.replace_extension(".mtl");
-        std::ifstream materialFile(materialPath);
-        std::ostringstream objText, materialText;
-        objText << objFile.rdbuf();
-        materialText << materialFile.rdbuf();
-        loaded = reader.ParseFromString(objText.str(), materialText.str(), config);
-    } else loaded = reader.ParseFromFile(objPath, config);
+    const auto sourcePath = std::filesystem::u8path(objPath);
+    std::ifstream objFile(sourcePath);
+    if (!objFile) throw std::runtime_error("OBJ not found: " + objPath);
+    auto materialPath = sourcePath;
+    materialPath.replace_extension(".mtl");
+    std::ifstream materialFile(materialPath);
+    std::ostringstream objText, materialText;
+    objText << objFile.rdbuf();
+    materialText << materialFile.rdbuf();
+    const bool loaded = reader.ParseFromString(objText.str(), materialText.str(), config);
     if (!loaded) {
         throw std::runtime_error("OBJ load failed: " + reader.Error());
     }
@@ -63,17 +66,24 @@ Mesh::Mesh(const std::string& objPath) {
     std::vector<GLuint> materialTextures(materials.size(), 0);
     for (std::size_t material = 0; material < materials.size(); ++material) {
         if (materials[material].diffuse_texname.empty()) continue;
-        const auto directory = std::filesystem::path(objPath).parent_path();
-        auto path = directory / std::filesystem::path(materials[material].diffuse_texname);
+        const auto directory = std::filesystem::u8path(objPath).parent_path();
+        auto path = directory / std::filesystem::u8path(materials[material].diffuse_texname);
         if (!std::filesystem::exists(path)) {
-            const auto filename = std::filesystem::path(materials[material].diffuse_texname).filename();
+            const auto filename = std::filesystem::u8path(materials[material].diffuse_texname).filename();
             for (const auto& candidate : {directory / filename, directory.parent_path() / "textures" / filename}) {
                 if (std::filesystem::exists(candidate)) { path = candidate; break; }
             }
         }
         int width = 0, height = 0, channels = 0;
         stbi_set_flip_vertically_on_load(true);
-        unsigned char* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
+        std::ifstream textureFile(path, std::ios::binary);
+        std::vector<unsigned char> textureBytes;
+        if (!textureFile) {
+            std::cerr << "Texture unavailable: " << path << '\n';
+            continue;
+        }
+        textureBytes.assign(std::istreambuf_iterator<char>(textureFile), std::istreambuf_iterator<char>());
+        unsigned char* pixels = stbi_load_from_memory(textureBytes.data(), static_cast<int>(textureBytes.size()), &width, &height, &channels, 4);
         if (!pixels) {
             std::cerr << "Texture unavailable: " << path << '\n';
             continue;
@@ -92,6 +102,7 @@ Mesh::Mesh(const std::string& objPath) {
     bool firstPosition = true;
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
+        if (isFence(shape.name)) continue;
         for (const auto& index : shape.mesh.indices) {
             if (index.vertex_index < 0 || static_cast<std::size_t>(3 * index.vertex_index + 2) >= attributes.vertices.size()) {
                 throw std::runtime_error("OBJ has invalid position index");
@@ -119,6 +130,7 @@ Mesh::Mesh(const std::string& objPath) {
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
+        if (isFence(shape.name)) continue;
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
             const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;

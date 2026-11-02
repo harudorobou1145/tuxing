@@ -4,6 +4,8 @@ in vec3 worldNormal;
 in vec2 uv;
 in vec3 localPosition;
 uniform int trackSurface;
+uniform int unlit;
+uniform float smokeAlpha;
 uniform vec3 animationState;
 uniform sampler2D diffuseMap;
 uniform vec3 lightPosition;
@@ -52,5 +54,10 @@ void main() {
         albedo = mix(vec3(0.85, 0.025, 0.045), vec3(1.0, 0.85, 0.04), stars);
     }
     vec3 color = albedo * (0.24 + 0.76 * diffuse) + vec3(1.0, 0.9, 0.7) * 0.35 * specular;
-    fragmentColor = vec4(color, 1.0);
+    if (unlit == 1) {
+        float radial = 1.0 - smoothstep(0.35, 1.0, distance(uv, vec2(0.5)) * 2.0);
+        fragmentColor = vec4(albedo, smokeAlpha * radial);
+    } else {
+        fragmentColor = vec4(color, 1.0);
+    }
 }
