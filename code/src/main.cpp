@@ -89,7 +89,6 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh cube(root + "/model/demo/cube.obj");
     Mesh ground(55.0f, 36);
     Mesh flag(2.4f, 1.6f, 64, 32);
-    Texture gateTexture;
     Texture white(1);
     Texture paving(2);
     std::cout << "Ready. Space: pause, R: replay, arrows: shots, B: bump toggle, Esc: exit" << std::endl;
@@ -147,7 +146,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         if (!fullScene || coreScene) ground.draw(shader, paving.handle, glm::vec3(0.92f));
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
-        gate.draw(shader, fullScene ? white.handle : gateTexture.handle, glm::vec3(1));
+        gate.draw(shader, white.handle, glm::vec3(1));
         const auto box = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
             const glm::vec3 extent = cube.maximum() - cube.minimum();
             glm::mat4 transform = glm::translate(glm::mat4(1), position);
