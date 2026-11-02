@@ -1,10 +1,17 @@
 #include "Mesh.hpp"
+#include "Shader.hpp"
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include <tiny_obj_loader.h>
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cstddef>
 #include <stdexcept>
 #include <vector>
+#include <filesystem>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 namespace {
 struct Vertex {
@@ -34,12 +41,57 @@ Mesh::Mesh(const std::string& objPath) {
     tinyobj::ObjReader reader;
     tinyobj::ObjReaderConfig config;
     config.triangulate = true;
-    if (!reader.ParseFromFile(objPath, config)) {
+    const bool soldier = objPath.find("/solider/") != std::string::npos;
+    bool loaded = false;
+    if (soldier) {
+        const auto path = std::filesystem::u8path(objPath);
+        std::ifstream objFile(path);
+        auto materialPath = path;
+        materialPath.replace_extension(".mtl");
+        std::ifstream materialFile(materialPath);
+        std::ostringstream objText, materialText;
+        objText << objFile.rdbuf();
+        materialText << materialFile.rdbuf();
+        loaded = reader.ParseFromString(objText.str(), materialText.str(), config);
+    } else loaded = reader.ParseFromFile(objPath, config);
+    if (!loaded) {
         throw std::runtime_error("OBJ load failed: " + reader.Error());
     }
     const auto& attributes = reader.GetAttrib();
+    if (!reader.Warning().empty()) std::cerr << reader.Warning() << '\n';
+    const auto& materials = reader.GetMaterials();
+    std::vector<GLuint> materialTextures(materials.size(), 0);
+    for (std::size_t material = 0; material < materials.size(); ++material) {
+        if (materials[material].diffuse_texname.empty()) continue;
+        const auto directory = std::filesystem::path(objPath).parent_path();
+        auto path = directory / std::filesystem::path(materials[material].diffuse_texname);
+        if (!std::filesystem::exists(path)) {
+            const auto filename = std::filesystem::path(materials[material].diffuse_texname).filename();
+            for (const auto& candidate : {directory / filename, directory.parent_path() / "textures" / filename}) {
+                if (std::filesystem::exists(candidate)) { path = candidate; break; }
+            }
+        }
+        int width = 0, height = 0, channels = 0;
+        stbi_set_flip_vertically_on_load(true);
+        unsigned char* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
+        if (!pixels) {
+            std::cerr << "Texture unavailable: " << path << '\n';
+            continue;
+        }
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(pixels);
+        materialTextures[material] = texture;
+        textures.push_back(texture);
+    }
     bool firstPosition = true;
     for (const auto& shape : reader.GetShapes()) {
+        if (soldier && shape.name == "Cube") continue;
         for (const auto& index : shape.mesh.indices) {
             if (index.vertex_index < 0 || static_cast<std::size_t>(3 * index.vertex_index + 2) >= attributes.vertices.size()) {
                 throw std::runtime_error("OBJ has invalid position index");
@@ -56,6 +108,8 @@ Mesh::Mesh(const std::string& objPath) {
         }
     }
     if (firstPosition) throw std::runtime_error("OBJ contains no triangles: " + objPath);
+    std::cout << "Bounds " << objPath << ": [" << boundsMin.x << ", " << boundsMin.y << ", " << boundsMin.z
+              << "] - [" << boundsMax.x << ", " << boundsMax.y << ", " << boundsMax.z << "]" << std::endl;
     const glm::vec3 extent = boundsMax - boundsMin;
     const glm::vec3 safeExtent{
         extent.x > 0.0f ? extent.x : 1.0f,
@@ -64,7 +118,19 @@ Mesh::Mesh(const std::string& objPath) {
 
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
+        if (soldier && shape.name == "Cube") continue;
+        const bool track = shape.name.find("TrackMesh") != std::string::npos;
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
+            const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;
+            const bool validMaterial = material >= 0 && static_cast<std::size_t>(material) < materials.size();
+            const glm::vec3 color = validMaterial
+                ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
+                : glm::vec3(1.0f);
+            const GLuint texture = validMaterial ? materialTextures[material] : 0;
+            if (batches.empty() || batches.back().color != color || batches.back().texture != texture || batches.back().track != track) {
+                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track});
+            }
+            batches.back().count += 3;
             Vertex triangle[3]{};
             for (int corner = 0; corner < 3; ++corner) {
                 const auto index = shape.mesh.indices[offset + corner];
@@ -78,9 +144,8 @@ Mesh::Mesh(const std::string& objPath) {
                     if (normal + 2 >= attributes.normals.size()) throw std::runtime_error("OBJ has invalid normal index");
                     triangle[corner].normal = {attributes.normals[normal], attributes.normals[normal + 1], attributes.normals[normal + 2]};
                 }
-                if (index.texcoord_index >= 0) {
+                if (index.texcoord_index >= 0 && static_cast<std::size_t>(index.texcoord_index) * 2 + 1 < attributes.texcoords.size()) {
                     const auto uv = static_cast<std::size_t>(index.texcoord_index) * 2;
-                    if (uv + 1 >= attributes.texcoords.size()) throw std::runtime_error("OBJ has invalid UV index");
                     triangle[corner].uv = {attributes.texcoords[uv], attributes.texcoords[uv + 1]};
                 } else {
                     // Planar fallback in model space, normalized so textures tile once
@@ -134,10 +199,48 @@ Mesh::Mesh(float halfExtent, int subdivisions) {
     upload(vertices, vertexArray, vertexBuffer, count);
 }
 Mesh::~Mesh() {
+    if (!textures.empty()) glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
     glDeleteBuffers(1, &vertexBuffer);
     glDeleteVertexArrays(1, &vertexArray);
 }
 void Mesh::draw() const {
     glBindVertexArray(vertexArray);
     glDrawArrays(GL_TRIANGLES, 0, count);
+}
+
+void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint) const {
+    shader.integer("trackSurface", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(vertexArray);
+    if (batches.empty()) {
+        glBindTexture(GL_TEXTURE_2D, fallback);
+        shader.vector("tint", tint);
+        glDrawArrays(GL_TRIANGLES, 0, count);
+    } else {
+        for (const auto& batch : batches) {
+            shader.integer("trackSurface", batch.track ? 1 : 0);
+            glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : fallback);
+            shader.vector("tint", tint * batch.color);
+            glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
+        }
+    }
+    shader.integer("trackSurface", 0);
+}
+
+Mesh::Mesh(float width, float height, int columns, int rows) {
+    std::vector<Vertex> vertices;
+    const auto add = [&](int column, int row) {
+        const float horizontal = static_cast<float>(column) / columns;
+        const float vertical = static_cast<float>(row) / rows;
+        vertices.push_back({{width * horizontal, height * vertical, 0}, {0, 0, 1}, {horizontal, vertical}});
+    };
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            add(column, row); add(column + 1, row); add(column + 1, row + 1);
+            add(column, row); add(column + 1, row + 1); add(column, row + 1);
+        }
+    }
+    boundsMin = {0, 0, 0};
+    boundsMax = {width, height, 0};
+    upload(vertices, vertexArray, vertexBuffer, count);
 }

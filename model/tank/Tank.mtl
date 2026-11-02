@@ -1,0 +1,41 @@
+# materials from Tank.glb
+
+newmtl Main_Details
+Kd 0.3411 0.3778 0.3342
+Ka 0.1 0.1 0.1
+Ks 0.2400 0.2400 0.2400
+Ns 68.4
+d 1.0000
+illum 2
+
+newmtl Main_Dark
+Kd 0.2840 0.3353 0.2968
+Ka 0.1 0.1 0.1
+Ks 0.2400 0.2400 0.2400
+Ns 68.4
+d 1.0000
+illum 2
+
+newmtl Main
+Kd 0.3614 0.4264 0.3776
+Ka 0.1 0.1 0.1
+Ks 0.2400 0.2400 0.2400
+Ns 68.4
+d 1.0000
+illum 2
+
+newmtl Main_Light
+Kd 0.4099 0.4629 0.3568
+Ka 0.1 0.1 0.1
+Ks 0.2400 0.2400 0.2400
+Ns 68.4
+d 1.0000
+illum 2
+
+newmtl Wheels
+Kd 0.4351 0.4446 0.3667
+Ka 0.1 0.1 0.1
+Ks 0.2400 0.2400 0.2400
+Ns 68.4
+d 1.0000
+illum 2

@@ -2,11 +2,11 @@
 
 ## 1. 网页创建仓库
 
-1. 注册或登录 https://github.com ，点击右上角 `+` → `New repository`。
-2. Repository name 可填 `lantern-festival-opengl`。
+1. 注册或登录 [GitHub](https://github.com)，点击右上角 `+` → `New repository`。
+2. Repository name 可填 `parade-animation-opengl`。已有仓库无需重新创建，以下地址仅为示例，实际使用当前仓库地址。
 3. 推荐选择 **Private**，是否公开以课程要求为准；老师需要访问时记得邀请或调整可见性。
 4. **不要勾选**初始化 README、.gitignore、License，本地已经准备了文件；许可证需全组决定。
-5. 点击 `Create repository`，复制 HTTPS 地址，例如 `https://github.com/你的用户名/lantern-festival-opengl.git`。
+5. 点击 `Create repository`，复制 HTTPS 地址，例如 `https://github.com/你的用户名/parade-animation-opengl.git`。
 
 ## 2. 将本地工程第一次推送
 
@@ -27,7 +27,7 @@ git add .
 git status
 git commit -m "chore: initialize OpenGL animation project"
 git branch -M main
-git remote add origin https://github.com/你的用户名/lantern-festival-opengl.git
+git remote add origin https://github.com/你的用户名/parade-animation-opengl.git
 git push -u origin main
 ```
 
@@ -44,8 +44,8 @@ git push -u origin main
 组员第一次下载：
 
 ```powershell
-git clone https://github.com/仓库拥有者/lantern-festival-opengl.git
-cd lantern-festival-opengl
+git clone https://github.com/仓库拥有者/parade-animation-opengl.git
+cd parade-animation-opengl
 ```
 
 每人需要独立安装编译环境，依赖由 CMake 下载，不共享各自的 build 文件夹。
@@ -57,7 +57,7 @@ cd lantern-festival-opengl
 ```powershell
 git switch main
 git pull --ff-only
-git switch -c feat/lantern-model
+git switch -c feat/parade-formation
 ```
 
 修改、构建和测试后：
@@ -65,8 +65,8 @@ git switch -c feat/lantern-model
 ```powershell
 git add model/ code/
 git diff --cached
-git commit -m "feat: improve lantern model"
-git push -u origin feat/lantern-model
+git commit -m "feat: add parade formation"
+git push -u origin feat/parade-formation
 ```
 
 在 GitHub 点击 `Compare & pull request`，填写改了什么、怎样测试、效果截图；由另一位组员检查后合并。每项任务用新的分支名，例如 `feat/phong-lighting`、`feat/bezier-camera`。不要多人同时直接修改 main。

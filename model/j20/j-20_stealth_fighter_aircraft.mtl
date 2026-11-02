@@ -1,0 +1,36 @@
+# materials from j-20_stealth_fighter_aircraft.glb
+
+newmtl material
+Kd 1.0000 1.0000 1.0000
+Ka 0.1 0.1 0.1
+Ks 0.0400 0.0400 0.0400
+Ns 2.0
+d 1.0000
+illum 2
+map_Kd j-20_stealth_fighter_aircraft_tex0.png
+
+newmtl wheels
+Kd 1.0000 1.0000 1.0000
+Ka 0.1 0.1 0.1
+Ks 0.0400 0.0400 0.0400
+Ns 2.0
+d 1.0000
+illum 2
+map_Kd j-20_stealth_fighter_aircraft_tex3.png
+
+newmtl J20_Glass
+Kd 0.2537 0.3408 0.4051
+Ka 0.1 0.1 0.1
+Ks 0.0400 0.0400 0.0400
+Ns 183.4
+d 0.2606
+illum 2
+
+newmtl Cabin
+Kd 1.0000 1.0000 1.0000
+Ka 0.1 0.1 0.1
+Ks 0.0400 0.0400 0.0400
+Ns 2.0
+d 1.0000
+illum 2
+map_Kd j-20_stealth_fighter_aircraft_tex6.png

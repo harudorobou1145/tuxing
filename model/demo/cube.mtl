@@ -1,0 +1,22 @@
+# demo materials
+newmtl Brick
+Kd 0.800 0.800 0.800
+Ks 0.100 0.100 0.100
+Ns 24.0
+d 1.0
+illum 2
+map_Kd cube_tex.png
+
+newmtl RedTop
+Kd 0.750 0.150 0.120
+Ks 0.200 0.200 0.200
+Ns 64.0
+d 1.0
+illum 2
+
+newmtl GoldBottom
+Kd 0.750 0.600 0.200
+Ks 0.400 0.400 0.400
+Ns 96.0
+d 1.0
+illum 2
