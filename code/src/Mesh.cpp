@@ -1,5 +1,6 @@
 #include "Mesh.hpp"
 #include "Shader.hpp"
+#include "ScenePalette.hpp"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <tiny_obj_loader.h>
@@ -20,6 +21,28 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec2 uv;
 };
+
+// Architectural decals use their own UVs and clamp at the plaque edges.
+GLuint loadDecal(const std::filesystem::path& path) {
+    int width = 0, height = 0, channels = 0;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
+    if (!pixels) {
+        std::cerr << "Texture unavailable: " << path << '\n';
+        return 0;
+    }
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    stbi_image_free(pixels);
+    return texture;
+}
 
 void upload(const std::vector<Vertex>& vertices, GLuint& vertexArray, GLuint& vertexBuffer, GLsizei& count) {
     count = static_cast<GLsizei>(vertices.size());
@@ -47,6 +70,7 @@ Mesh::Mesh(const std::string& objPath) {
     tinyobj::ObjReaderConfig config;
     config.triangulate = true;
     const bool soldier = objPath.find("/solider/") != std::string::npos;
+    const bool tiananmen = std::filesystem::u8path(objPath).parent_path().filename() == "tiananmen";
     const auto sourcePath = std::filesystem::u8path(objPath);
     std::ifstream objFile(sourcePath);
     if (!objFile) throw std::runtime_error("OBJ not found: " + objPath);
@@ -138,7 +162,7 @@ Mesh::Mesh(const std::string& objPath) {
             const GLuint texture = validMaterial ? materialTextures[material] : 0;
             const glm::vec3 color = soldier && texture ? glm::vec3(1.0f) : validMaterial
                 ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
-                : glm::vec3(1.0f);
+                : tiananmen ? palette::tiananmenColor(shape.name) : glm::vec3(1.0f);
             if (batches.empty() || batches.back().color != color || batches.back().texture != texture || batches.back().track != track) {
                 batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track});
             }
@@ -176,6 +200,34 @@ Mesh::Mesh(const std::string& objPath) {
         }
     }
     if (vertices.empty()) throw std::runtime_error("OBJ contains no triangles: " + objPath);
+    // These source-space anchors are shared by the gate/core/balanced exports.
+    // Only add decals to this known gate, not to unrelated custom OBJ models.
+    const bool hasPortrait = std::any_of(reader.GetShapes().begin(), reader.GetShapes().end(),
+        [](const auto& shape) { return shape.name == "Mao_Zeong"; });
+    if (tiananmen && hasPortrait) {
+        const auto directory = std::filesystem::u8path(objPath).parent_path() / "textures";
+        const auto plaque = [&](const char* filename, glm::vec3 bottomLeft, glm::vec3 bottomRight,
+                                glm::vec3 topRight, glm::vec3 topLeft) {
+            const GLuint texture = loadDecal(directory / filename);
+            if (!texture) return;
+            textures.push_back(texture);
+            // Also clear the original lettering surfaces retained by the full scene.
+            const glm::vec3 offset(0, 0, 12.0f);
+            const glm::vec3 normal = glm::normalize(glm::cross(bottomRight - bottomLeft, topLeft - bottomLeft));
+            batches.push_back({static_cast<GLint>(vertices.size()), 6, glm::vec3(1), texture, false});
+            const Vertex bl{bottomLeft + offset, normal, {0, 0}};
+            const Vertex br{bottomRight + offset, normal, {1, 0}};
+            const Vertex tr{topRight + offset, normal, {1, 1}};
+            const Vertex tl{topLeft + offset, normal, {0, 1}};
+            vertices.insert(vertices.end(), {bl, br, tr, bl, tr, tl});
+        };
+        plaque("slogans_atlas_l.png", {-3771.65f, 512.66f, 1771.18f}, {-1916.72f, 512.66f, 1719.37f},
+            {-1916.90f, 706.861f, 1713.08f}, {-3771.83f, 706.861f, 1764.89f});
+        plaque("slogans_atlas_r.png", {-666.798f, 512.66f, 1684.46f}, {1188.13f, 512.66f, 1632.64f},
+            {1187.96f, 706.861f, 1626.35f}, {-666.974f, 706.861f, 1678.16f});
+        plaque("figure.jpg", {-1429.73f, 442.886f, 1703.46f}, {-1153.19f, 442.886f, 1696.17f},
+            {-1153.19f, 812.197f, 1696.17f}, {-1429.73f, 812.197f, 1703.46f});
+    }
     upload(vertices, vertexArray, vertexBuffer, count);
 }
 
