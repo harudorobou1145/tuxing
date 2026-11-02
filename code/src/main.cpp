@@ -96,7 +96,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh aircraft(root + "/model/j20/j-20_stealth_fighter_aircraft.obj");
     Mesh soldier(root + "/model/solider/source/\xe6\x9c\xaa\xe5\x91\xbd\xe5\x90\x8d.obj");
     Mesh cube(root + "/model/demo/cube.obj");
-    Mesh ground(100.0f, 36);
+    Mesh ground(600.0f, 36);
     Mesh flag(2.4f, 1.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Texture white(1);
@@ -153,7 +153,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(bump ? 1 : 0, 0, 0));
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
-        ground.draw(shader, paving.handle, glm::vec3(0.92f));
+        ground.draw(shader, white.handle, glm::vec3(0.88f, 0.85f, 0.77f));
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
         gate.draw(shader, white.handle, glm::vec3(1));
@@ -167,15 +167,15 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             shader.vector("tint", color);
             cube.draw();
         };
-        box({0, 0.005f, 6}, {70, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
+        box({0, 0.055f, 6}, {70, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
         for (int stripe = -12; stripe <= 12; ++stripe)
-            box({stripe * 2.5f, 0.025f, 6}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
+            box({stripe * 2.5f, 0.075f, 6}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         for (std::size_t index = 0; index < tanks.size(); ++index) {
             const float horizontal = -10.0f + (seconds - 3.0f) * 1.7f - index * 7.0f;
             const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
             const float localSpeed = 1.7f * std::max({extent.x, extent.y, extent.z}) / 6.0f;
             shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
-            shader.matrix("model", placement(*tanks[index], {horizontal, 0.03f, 5}, 6.0f, glm::radians(180.0f)));
+            shader.matrix("model", placement(*tanks[index], {horizontal, 0.08f, 5}, 6.0f, glm::radians(180.0f)));
             tanks[index]->draw(shader, white.handle, glm::vec3(1));
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
@@ -185,13 +185,13 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 const float horizontal = lastTank - 6.0f - row * 1.2f;
                 const float depth = 5.0f + (column - 1.5f) * 0.8f;
                 shader.vector("animationState", glm::vec3(seconds, -1, 0));
-                shader.matrix("model", placement(soldier, {horizontal, 0.03f, depth}, 1.7f, glm::radians(90.0f)));
+                shader.matrix("model", placement(soldier, {horizontal, 0.08f, depth}, 1.7f, glm::radians(90.0f)));
                 soldier.draw(shader, white.handle, glm::vec3(1));
             }
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        box({2.5f, 3.6f, 8}, {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
-        shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, 5.5f, 8)));
+        box({2.5f, 3.65f, 8}, {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
+        shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, 5.55f, 8)));
         shader.vector("animationState", glm::vec3(seconds, 1, 0));
         shader.vector("surfaceState", glm::vec3(0, 1, 0));
         flag.draw(shader, white.handle, glm::vec3(1));
