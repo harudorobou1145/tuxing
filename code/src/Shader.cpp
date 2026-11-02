@@ -1,12 +1,13 @@
 #include "Shader.hpp"
 #include <glm/gtc/type_ptr.hpp>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 
 namespace {
 GLuint compile(GLenum type, const std::string& path) {
-    std::ifstream input(path);
+    std::ifstream input(std::filesystem::u8path(path));
     if (!input) throw std::runtime_error("Cannot open shader: " + path);
     std::ostringstream buffer;
     buffer << input.rdbuf();
@@ -61,4 +62,7 @@ void Shader::vector(const char* name, const glm::vec3& value) const {
 }
 void Shader::integer(const char* name, int value) const {
     glUniform1i(glGetUniformLocation(program, name), value);
+}
+void Shader::floating(const char* name, float value) const {
+    glUniform1f(glGetUniformLocation(program, name), value);
 }

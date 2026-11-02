@@ -4,8 +4,8 @@
 
 int main() {
     assert(animation::progress(-1.0f) == 0.0f);
-    assert(animation::progress(12.5f) == 0.5f);
-    assert(animation::progress(25.0f) == 1.0f);
+    assert(animation::progress(15.0f) == 0.5f);
+    assert(animation::progress(25.0f) == 25.0f / 30.0f);
     assert(animation::progress(30.0f) == 1.0f);
     const auto start = animation::bezier(0.0f);
     const auto end = animation::bezier(1.0f);
@@ -15,6 +15,7 @@ int main() {
     assert(animation::shot(25).index == 4);
     assert(animation::aircraft(20).x == -18);
     assert(animation::aircraft(25).x == 20);
+    assert(animation::aircraft(30).x == 15);
     const auto march = animation::shot(12.5f);
     assert(std::abs(march.target.x - (-12.85f)) < 0.01f);
     assert(march.target.z == 5.0f);
@@ -24,11 +25,11 @@ int main() {
         assert(std::abs(before.camera.x - after.camera.x) < 0.01f);
         assert(std::abs(before.target.y - after.target.y) < 0.01f);
     }
-    for (int frame = 0; frame <= 1500; ++frame) {
+    for (int frame = 0; frame <= 1800; ++frame) {
         const auto shot = animation::shot(frame / 60.0f);
         const auto aircraft = animation::aircraft(frame / 60.0f);
         assert(std::isfinite(aircraft.x) && std::isfinite(aircraft.y) && std::isfinite(aircraft.z));
-        assert(aircraft.y >= 12.0f && aircraft.y <= 15.0f);
+        assert(aircraft.y >= 23.0f && aircraft.y <= 50.0f);
         assert(std::isfinite(shot.camera.x) && std::isfinite(shot.target.y));
         const float distance = std::abs(shot.camera.x - shot.target.x)
             + std::abs(shot.camera.y - shot.target.y) + std::abs(shot.camera.z - shot.target.z);
