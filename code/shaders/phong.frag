@@ -4,6 +4,9 @@ in vec3 worldNormal;
 in vec2 uv;
 in vec3 localPosition;
 uniform int trackSurface;
+uniform int pavingSurface;
+uniform int roofSurface;
+uniform int bumpEnabled;
 uniform vec3 animationState;
 uniform sampler2D diffuseMap;
 uniform vec3 lightPosition;
@@ -19,12 +22,16 @@ float star(vec2 point, vec2 center, float radius, float rotation) {
     return 1.0 - smoothstep(edge - 0.004, edge + 0.004, length(offset));
 }
 void main() {
+    // World-space tiling keeps the exported plaza and generated ground consistent.
+    vec2 surfaceUV = pavingSurface == 1 ? worldPosition.xz / 1.6 : uv;
+    // Source model units per texture repeat. Larger values produce larger roof tiles.
+    if (roofSurface == 1) surfaceUV = uv / 650.0;
     vec3 normal = normalize(worldNormal);
-    if (surfaceState.x > 0.5) {
+    if (surfaceState.x > 0.5 || (pavingSurface == 1 && bumpEnabled == 1)) {
         vec3 positionX = dFdx(worldPosition), positionY = dFdy(worldPosition);
         vec3 crossX = cross(positionY, normal), crossY = cross(normal, positionX);
         float determinant = dot(positionX, crossX);
-        float height = texture(diffuseMap, uv).r;
+        float height = texture(diffuseMap, surfaceUV).r;
         vec3 gradient = sign(determinant) * (dFdx(height) * crossX + dFdy(height) * crossY);
         normal = normalize(abs(determinant) * normal - 0.12 * gradient);
     }
@@ -34,7 +41,7 @@ void main() {
     vec3 reflected = reflect(-lightDirection, normal);
     float diffuse = max(dot(normal, lightDirection), 0.0);
     float specular = diffuse > 0.0 ? pow(max(dot(viewDirection, reflected), 0.0), 32.0) : 0.0;
-    vec3 albedo = texture(diffuseMap, uv).rgb * tint;
+    vec3 albedo = texture(diffuseMap, surfaceUV).rgb * tint;
     if (trackSurface == 1) {
         float loop = atan((localPosition.y - 1.35) / 1.35, localPosition.x / 6.2);
         float tread = smoothstep(0.18, 0.28, fract(loop * 12.0 - animationState.x * animationState.z * 12.0 / 6.2));

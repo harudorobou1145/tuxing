@@ -16,7 +16,7 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
     void draw() const;
-    void draw(const Shader& shader, GLuint fallback, const glm::vec3& tint) const;
+    void draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GLuint paving = 0) const;
     const glm::vec3& minimum() const { return boundsMin; }
     const glm::vec3& maximum() const { return boundsMax; }
 private:
@@ -26,6 +26,8 @@ private:
         glm::vec3 color;
         GLuint texture;
         bool track;
+        bool ground = false;
+        bool roof = false;
     };
     std::vector<Batch> batches;
     std::vector<GLuint> textures;

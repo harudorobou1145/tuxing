@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 #include <filesystem>
@@ -22,7 +23,7 @@ struct Vertex {
 };
 
 // Architectural decals use their own UVs and clamp at the plaque edges.
-GLuint loadDecal(const std::filesystem::path& path) {
+GLuint loadDecal(const std::filesystem::path& path, bool repeat = false) {
     int width = 0, height = 0, channels = 0;
     stbi_set_flip_vertically_on_load(true);
     unsigned char* pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
@@ -37,8 +38,8 @@ GLuint loadDecal(const std::filesystem::path& path) {
     glGenerateMipmap(GL_TEXTURE_2D);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE);
     stbi_image_free(pixels);
     return texture;
 }
@@ -140,19 +141,43 @@ Mesh::Mesh(const std::string& objPath) {
         extent.y > 0.0f ? extent.y : 1.0f,
         extent.z > 0.0f ? extent.z : 1.0f};
 
+    GLuint roofTexture = 0;
+    if (tiananmen && std::any_of(reader.GetShapes().begin(), reader.GetShapes().end(),
+        [](const auto& shape) { return shape.name.find("tiananmen_square_Jaune,_toit") == 0; })) {
+        roofTexture = loadDecal(std::filesystem::u8path(objPath).parent_path()
+            / "textures" / "roof_glazed_tiles.png", true);
+        if (roofTexture) textures.push_back(roofTexture);
+    }
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
+        const bool roof = roofTexture && shape.name.find("tiananmen_square_Jaune,_toit") == 0;
+        const bool groundObject = tiananmen && (shape.name == "Floor/Plancher.1"
+            || shape.name == "Bottom" || shape.name == "Bottom_1"
+            || shape.name == "Tour_centre_Square" || shape.name == "Cube");
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
+            bool ground = false;
+            if (groundObject) {
+                glm::vec3 points[3];
+                for (int k = 0; k < 3; ++k) {
+                    const int index = shape.mesh.indices[offset + k].vertex_index;
+                    points[k] = {attributes.vertices[3 * index], attributes.vertices[3 * index + 1], attributes.vertices[3 * index + 2]};
+                }
+                const auto normal = glm::cross(points[1] - points[0], points[2] - points[0]);
+                ground = std::abs(normal.y) > 0.99f * glm::length(normal)
+                    && std::min({points[0].y, points[1].y, points[2].y}) > -80.0f
+                    && std::max({points[0].y, points[1].y, points[2].y}) < 50.0f;
+            }
             const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;
             const bool validMaterial = material >= 0 && static_cast<std::size_t>(material) < materials.size();
-            const GLuint texture = validMaterial ? materialTextures[material] : 0;
-            const glm::vec3 color = soldier && texture ? glm::vec3(1.0f) : validMaterial
+            const GLuint texture = roof ? roofTexture : validMaterial ? materialTextures[material] : 0;
+            const glm::vec3 color = roof || (soldier && texture) ? glm::vec3(1.0f) : validMaterial
                 ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
                 : tiananmen ? palette::tiananmenColor(shape.name) : glm::vec3(1.0f);
-            if (batches.empty() || batches.back().color != color || batches.back().texture != texture || batches.back().track != track) {
-                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track});
+            if (batches.empty() || batches.back().color != color || batches.back().texture != texture
+                || batches.back().track != track || batches.back().ground != ground || batches.back().roof != roof) {
+                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track, ground, roof});
             }
             batches.back().count += 3;
             Vertex triangle[3]{};
@@ -182,6 +207,13 @@ Mesh::Mesh(const std::string& objPath) {
             const glm::vec3 cross = glm::cross(triangle[1].position - triangle[0].position, triangle[2].position - triangle[0].position);
             const glm::vec3 faceNormal = glm::length(cross) > 0.00001f ? glm::normalize(cross) : glm::vec3(0, 1, 0);
             for (auto& vertex : triangle) {
+                if (roof) {
+                    // Align the tile channels down each slope, including the hip ends.
+                    // Keep source-space coordinates; the shader controls repeat size.
+                    vertex.uv = std::abs(faceNormal.x) > std::abs(faceNormal.z)
+                        ? glm::vec2(vertex.position.z, -vertex.position.x)
+                        : glm::vec2(vertex.position.x, -vertex.position.z);
+                }
                 if (glm::length(vertex.normal) < 0.00001f) vertex.normal = faceNormal;
                 vertices.push_back(vertex);
             }
@@ -260,23 +292,31 @@ void Mesh::draw() const {
     glDrawArrays(GL_TRIANGLES, 0, count);
 }
 
-void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint) const {
+void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GLuint paving) const {
     shader.integer("trackSurface", 0);
+    shader.integer("roofSurface", 0);
+    shader.integer("pavingSurface", 0);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vertexArray);
     if (batches.empty()) {
+        shader.integer("pavingSurface", paving != 0 ? 1 : 0);
         glBindTexture(GL_TEXTURE_2D, fallback);
         shader.vector("tint", tint);
         glDrawArrays(GL_TRIANGLES, 0, count);
     } else {
         for (const auto& batch : batches) {
+            shader.integer("roofSurface", batch.roof ? 1 : 0);
+            const bool ground = batch.ground && paving != 0;
+            shader.integer("pavingSurface", ground ? 1 : 0);
             shader.integer("trackSurface", batch.track ? 1 : 0);
-            glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : fallback);
-            shader.vector("tint", tint * batch.color);
+            glBindTexture(GL_TEXTURE_2D, ground ? paving : batch.texture ? batch.texture : fallback);
+            shader.vector("tint", ground ? glm::vec3(0.92f) : tint * batch.color);
             glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
         }
     }
     shader.integer("trackSurface", 0);
+    shader.integer("pavingSurface", 0);
+    shader.integer("roofSurface", 0);
 }
 
 Mesh::Mesh(float width, float height, int columns, int rows) {

@@ -15,10 +15,26 @@
 #include <filesystem>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+#include <stb_image.h>
 
 namespace {
 class Texture {
 public:
+    explicit Texture(const std::string& path) {
+        int width = 0, height = 0, channels = 0;
+        stbi_set_flip_vertically_on_load(true);
+        unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+        if (!pixels) throw std::runtime_error("Ground texture unavailable: " + path);
+        glGenTextures(1, &handle);
+        glBindTexture(GL_TEXTURE_2D, handle);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        stbi_image_free(pixels);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    }
     explicit Texture(int kind = 0) {
         std::array<unsigned char, 64 * 64 * 3> pixels{};
         for (int row = 0; row < 64; ++row) {
@@ -90,7 +106,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh ground(55.0f, 36);
     Mesh flag(2.4f, 1.6f, 64, 32);
     Texture white(1);
-    Texture paving(2);
+    Texture paving(root + "/model/tile.jpeg");
     std::cout << "Ready. Space: pause, R: replay, arrows: shots, B: bump toggle, Esc: exit" << std::endl;
     glEnable(GL_DEPTH_TEST);
     double previous = glfwGetTime();
@@ -140,13 +156,14 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("cameraPosition", camera);
         shader.vector("lightPosition", glm::vec3(-15, 35, 20));
         shader.integer("diffuseMap", 0);
+        shader.integer("bumpEnabled", bump ? 1 : 0);
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(bump ? 1 : 0, 0, 0));
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
-        if (!fullScene || coreScene) ground.draw(shader, paving.handle, glm::vec3(0.92f));
+        if (!fullScene || coreScene) ground.draw(shader, paving.handle, glm::vec3(0.92f), paving.handle);
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
-        gate.draw(shader, white.handle, glm::vec3(1));
+        gate.draw(shader, white.handle, glm::vec3(1), paving.handle);
         const auto box = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
             const glm::vec3 extent = cube.maximum() - cube.minimum();
             glm::mat4 transform = glm::translate(glm::mat4(1), position);
