@@ -67,7 +67,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     std::cout << "Loading OBJ: " << modelPath << std::endl;
     Mesh gate(modelPath);
     const bool coreScene = modelPath.find("tiananmen_core.obj") != std::string::npos;
-    const bool fullScene = coreScene || modelPath.find("Tiananmen+Square") != std::string::npos;
+    const bool fullScene = coreScene || modelPath.find("tiananmen_balanced.obj") != std::string::npos
+        || modelPath.find("Tiananmen+Square") != std::string::npos;
     glm::mat4 gateModel = placement(gate, {0, 0, -3}, 18.0f);
     if (fullScene) {
         gateModel = glm::translate(glm::mat4(1), glm::vec3(0, 0, -3));
@@ -171,12 +172,15 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         for (int row = 0; row < 5; ++row) {
             for (int column = 0; column < 4; ++column) {
-                const float horizontal = -7.0f + (seconds - 9.0f) * 1.25f - row * 0.9f;
-                const float depth = 8.0f + column * 0.65f;
+                const float lastTank = -10.0f + (seconds - 3.0f) * 1.7f - 15.0f;
+                const float horizontal = lastTank - 4.0f - row * 0.9f;
+                const float depth = 5.0f + (column - 1.5f) * 0.65f;
+                shader.vector("animationState", glm::vec3(seconds, -1, 0));
                 shader.matrix("model", placement(soldier, {horizontal, 0.03f, depth}, 1.8f, glm::radians(90.0f)));
                 soldier.draw(shader, white.handle, glm::vec3(1));
             }
         }
+        shader.vector("animationState", glm::vec3(seconds, 0, 0));
         box({2.5f, 3.6f, 8}, {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
         shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, 5.5f, 8)));
         shader.vector("animationState", glm::vec3(seconds, 1, 0));
@@ -243,7 +247,7 @@ int main(int argc, char* argv[]) {
     glfwSwapInterval(1);
     int result = 0;
     try {
-        std::string modelPath = std::string(PROJECT_ROOT) + "/model/tiananmen/tiananmen_core.obj";
+        std::string modelPath = std::string(PROJECT_ROOT) + "/model/tiananmen/tiananmen_balanced.obj";
         std::string captureDirectory;
         for (int argument = 1; argument < argc; ++argument) {
             if (std::string(argv[argument]) == "--capture") {

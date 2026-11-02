@@ -123,10 +123,10 @@ Mesh::Mesh(const std::string& objPath) {
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
             const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;
             const bool validMaterial = material >= 0 && static_cast<std::size_t>(material) < materials.size();
-            const glm::vec3 color = validMaterial
+            const GLuint texture = validMaterial ? materialTextures[material] : 0;
+            const glm::vec3 color = soldier && texture ? glm::vec3(1.0f) : validMaterial
                 ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
                 : glm::vec3(1.0f);
-            const GLuint texture = validMaterial ? materialTextures[material] : 0;
             if (batches.empty() || batches.back().color != color || batches.back().texture != texture || batches.back().track != track) {
                 batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track});
             }

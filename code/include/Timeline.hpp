@@ -49,10 +49,10 @@ struct Shot {
 };
 
 inline Shot shot(float seconds) {
-    const Point cameras[] = {{-9, 7, 27}, {0, 3.8f, 16}, {6, 2.8f, 12},
-                             {6, 3.2f, 13}, {4.8f, 6.8f, 10.5f}, {2, 5, 16}};
-    const Point targets[] = {{0, 2, 0}, {0, 1.8f, 0}, {0, 1, 6},
-                             {0, 1, 8.5f}, {3.6f, 6.6f, 8}, {0, 13, 0}};
+    const Point cameras[] = {{-9, 7, 27}, {0, 3.8f, 16}, {-13, 3.5f, 15},
+                             {-4, 3.5f, 15}, {4.8f, 6.8f, 10.5f}, {2, 5, 16}};
+    const Point targets[] = {{0, 2, 0}, {0, 1.8f, 0}, {-17.1f, 1, 5},
+                             {-8.6f, 1, 5}, {3.6f, 6.6f, 8}, {0, 13, 0}};
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(time / 5.0f), 4);
     float parameter = segment(time, index * 5.0f, (index + 1) * 5.0f);

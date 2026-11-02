@@ -1,6 +1,7 @@
 param(
     [string]$Source = "$PSScriptRoot/../../model/tiananmen/Tiananmen+Square+3D+Scene2.obj",
-    [string]$Destination = "$PSScriptRoot/../../model/tiananmen/tiananmen_core.obj"
+    [string]$Destination = "$PSScriptRoot/../../model/tiananmen/tiananmen_core.obj",
+    [switch]$Balanced
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -8,7 +9,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Globalization;
-public static class CoreSceneExtractor {
+public static class BalancedSceneExtractor {
     sealed class Part {
         public string Name;
         public double MinX=double.PositiveInfinity, MinZ=double.PositiveInfinity;
@@ -25,7 +26,7 @@ public static class CoreSceneExtractor {
         if(value==0 || index<0 || index>=count) throw new InvalidDataException("Invalid OBJ index: "+text);
         return index;
     }
-    public static string Extract(string source, string destination) {
+    public static string Extract(string source, string destination, bool balanced) {
         var positions=new List<string>();
         var normals=new List<string>();
         var uvs=new List<string>();
@@ -55,9 +56,20 @@ public static class CoreSceneExtractor {
             }
         }
         int kept=0;
+        var repetitions=new Dictionary<string,int>();
         foreach(var candidate in parts) {
             candidate.Keep=candidate.Faces>0 && candidate.MinX>=-16000 && candidate.MaxX<=14000
                 && candidate.MinZ>=-6000 && candidate.MaxZ<=26000;
+            if(balanced && candidate.Faces>0) {
+                string family=System.Text.RegularExpressions.Regex.Replace(candidate.Name, @"\.\d+", "");
+                int repetition;
+                repetitions.TryGetValue(family, out repetition);
+                repetitions[family]=repetition+1;
+                double span=Math.Max(candidate.MaxX-candidate.MinX, candidate.MaxZ-candidate.MinZ);
+                bool landmark=family.IndexOf("tiananmen", StringComparison.OrdinalIgnoreCase)>=0
+                    || family.IndexOf("Mao_Zeong", StringComparison.OrdinalIgnoreCase)>=0;
+                candidate.Keep=landmark || span>=2500 || repetition%3==0;
+            }
             if(candidate.Keep) kept++;
         }
         if(kept==0) throw new InvalidDataException("No objects selected");
@@ -103,4 +115,4 @@ public static class CoreSceneExtractor {
     }
 }
 '@
-[CoreSceneExtractor]::Extract([IO.Path]::GetFullPath($Source), [IO.Path]::GetFullPath($Destination))
+[BalancedSceneExtractor]::Extract([IO.Path]::GetFullPath($Source), [IO.Path]::GetFullPath($Destination), $Balanced.IsPresent)

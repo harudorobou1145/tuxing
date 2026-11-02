@@ -15,6 +15,9 @@ int main() {
     assert(animation::shot(25).index == 4);
     assert(animation::aircraft(20).x == -18);
     assert(animation::aircraft(25).x == 20);
+    const auto march = animation::shot(12.5f);
+    assert(std::abs(march.target.x - (-12.85f)) < 0.01f);
+    assert(march.target.z == 5.0f);
     for (int boundary = 5; boundary <= 20; boundary += 5) {
         const auto before = animation::shot(boundary - 0.001f);
         const auto after = animation::shot(boundary + 0.001f);
