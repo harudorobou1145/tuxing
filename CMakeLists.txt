@@ -29,6 +29,16 @@ if(BUILD_SCENE)
     FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 1.0.1 GIT_SHALLOW TRUE)
     FetchContent_Declare(tinyobjloader GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git GIT_TAG v2.0.0rc13 GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(glfw glew glm tinyobjloader)
+    # Gate walls contain concave polygons around the archways. Use robust
+    # triangulation so these polygons retain their complete surface.
+    target_compile_definitions(tinyobjloader PRIVATE TINYOBJLOADER_USE_MAPBOX_EARCUT)
+    if(BUILD_TESTING)
+        add_executable(wall_triangulation_test code/tests/wall_triangulation_test.cpp)
+        target_link_libraries(wall_triangulation_test PRIVATE tinyobjloader)
+        target_compile_definitions(wall_triangulation_test PRIVATE
+            WALL_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/code/tests/data/gate_wall.obj.txt")
+        add_test(NAME wall_triangulation COMMAND wall_triangulation_test)
+    endif()
     FetchContent_Declare(stb GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5 GIT_SHALLOW FALSE)
     FetchContent_MakeAvailable(stb)
     if(APPLE)
