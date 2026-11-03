@@ -11,6 +11,10 @@ inline constexpr std::array<float, 7> shotTimes{0, 5, 12, 21, aircraftStart, air
 constexpr float tankSpeed = 1.25f;
 constexpr float soldierSpeed = 0.65f;
 constexpr float paradeDepth = 12.0f;
+// Source Cylinder's center/base, transformed with the full scene's gateModel.
+constexpr float flagPoleX = -0.4566794f;
+constexpr float flagPoleZ = 25.6760101f;
+constexpr float flagBaseOffset = 0.0731168f;
 inline float tankPosition(float seconds, int index) {
     return 2.0f + (seconds - 3.0f) * tankSpeed - index * 7.0f;
 }
@@ -45,9 +49,9 @@ inline float segment(float seconds, float start, float end) {
 }
 
 inline float flagHeight(float seconds) {
-    const float parameter = segment(seconds, 3.0f, 24.8f);
+    const float parameter = segment(seconds, 0.0f, 3.0f);
     const float eased = parameter * parameter * (3.0f - 2.0f * parameter);
-    return 1.35f + 4.20f * eased;
+    return 1.35f + flagBaseOffset + 4.20f * eased;
 }
 
 inline Point mix(Point start, Point end, float parameter) {
@@ -69,12 +73,19 @@ struct Shot {
 
 inline Shot shot(float seconds) {
     constexpr std::array<float, 9> cameraTimes{0, 5, 12, 21, 24.8f, 26, 28, 31, duration};
-    const std::array<Point, 9> cameras{{{-32, 22, 85}, {-6, 5, 23},
+    std::array<Point, 9> cameras{{{-32, 22, 85}, {-6, 5, 23},
         {soldierPosition(shotTimes[2]) + 6, 2.8f, paradeDepth + 9}, {soldierPosition(shotTimes[3]) + 6, 3.0f, paradeDepth + 10},
         {3.7f, 5.9f, 9.0f}, {3.7f, 6.5f, 8.65f}, {4, 10, 9}, {9, 18, 22}, {12, 24, 38}}};
-    const std::array<Point, 9> targets{{{10, 5, 32}, {0, 3, -3},
+    std::array<Point, 9> targets{{{10, 5, 32}, {0, 3, -3},
         {soldierPosition(shotTimes[2]) - 2, 1.1f, paradeDepth}, {soldierPosition(shotTimes[3]) - 2, 1.1f, paradeDepth},
         {3.7f, 6.0f, 8}, {3.7f, 6.5f, 8}, {-6, 25, 1}, {20, 23, -2}, {15, 40, -28}}};
+    const auto moveWithFlag = [](Point& point) {
+        point.x += flagPoleX - 2.5f;
+        point.y += flagBaseOffset;
+        point.z += flagPoleZ - 8.0f;
+    };
+    for (int key : {4, 5, 6}) moveWithFlag(cameras[key]);
+    for (int key : {4, 5}) moveWithFlag(targets[key]);
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(
         std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);

@@ -24,7 +24,7 @@ public:
         int width = 0, height = 0, channels = 0;
         stbi_set_flip_vertically_on_load(true);
         unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
-        if (!pixels) throw std::runtime_error("Ground texture unavailable: " + path);
+        if (!pixels) throw std::runtime_error("Texture unavailable: " + path);
         glGenTextures(1, &handle);
         glBindTexture(GL_TEXTURE_2D, handle);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
@@ -62,6 +62,43 @@ public:
     GLuint handle = 0;
 };
 
+class Sky {
+public:
+    explicit Sky(const std::string& root)
+        : shader(root + "/code/shaders/sky.vert", root + "/code/shaders/sky.frag"),
+          panorama(root + "/model/sky/day_sky.png") {
+        glBindTexture(GL_TEXTURE_2D, panorama.handle);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glGenVertexArrays(1, &vertexArray);
+    }
+    ~Sky() { glDeleteVertexArrays(1, &vertexArray); }
+    Sky(const Sky&) = delete;
+    Sky& operator=(const Sky&) = delete;
+    void draw(const glm::mat4& view, const glm::mat4& projection) const {
+        shader.use();
+        shader.matrix("inverseView", glm::inverse(view));
+        shader.matrix("inverseProjection", glm::inverse(projection));
+        shader.integer("skyMap", 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, panorama.handle);
+        // Keep a second binding for the distant terrain's atmospheric fade.
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, panorama.handle);
+        glActiveTexture(GL_TEXTURE0);
+        glBindVertexArray(vertexArray);
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glBindVertexArray(0);
+    }
+private:
+    Shader shader;
+    Texture panorama;
+    GLuint vertexArray = 0;
+};
+
 glm::vec3 vector(animation::Point point) {
     return {point.x, point.y, point.z};
 }
@@ -89,16 +126,27 @@ glm::vec3 aircraftPosition(float t, int wing) {
 void run(GLFWwindow* window, const std::string& modelPath, const std::string& captureDirectory) {
     const std::string root = PROJECT_ROOT;
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
+    Sky sky(root);
     std::cout << "Loading OBJ: " << modelPath << std::endl;
-    Mesh gate(modelPath);
     const bool coreScene = modelPath.find("tiananmen_core.obj") != std::string::npos;
     const bool fullScene = coreScene || modelPath.find("tiananmen_balanced.obj") != std::string::npos
         || modelPath.find("Tiananmen+Square") != std::string::npos;
+    Mesh gate(modelPath, fullScene);
+    std::unique_ptr<Mesh> monument;
+    glm::mat4 monumentModel(1.0f);
     glm::mat4 gateModel = placement(gate, {0, 0, -3}, 18.0f);
     if (fullScene) {
         gateModel = glm::translate(glm::mat4(1), glm::vec3(0, 0, -3));
         gateModel = glm::scale(gateModel, glm::vec3(18.0f / 7877.01f));
         gateModel = glm::translate(gateModel, glm::vec3(1331.935f, 0, -487.13f));
+        monument = std::make_unique<Mesh>(root + "/model/tiananmen/heroes_monument.obj");
+        // Replace Cube_3's hollow remnants with the extracted monument and its base.
+        const auto extent = monument->maximum() - monument->minimum();
+        const float platformWidth = 2653.689f;
+        const float scale = 0.90f * platformWidth / std::max(extent.x, extent.z);
+        const float size = scale * std::max({extent.x, extent.y, extent.z});
+        // Local terrain peaks at 132.94; place the foundation just above it.
+        monumentModel = gateModel * placement(*monument, {-1509.614f, 134.0f, 30016.281f}, size);
     }
     const std::array<std::string, 4> tankPaths = {"/model/tank/Tank.obj", "/model/tank2/Tank2.obj",
         "/model/tank3/Tank3.obj", "/model/tank4/Tank4.obj"};
@@ -125,7 +173,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 9> captureTimes = {2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f};
+    const std::array<float, 10> captureTimes = {0.0f, 2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -160,12 +208,16 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const glm::vec3 camera = vector(shot.camera);
         const glm::vec3 target = vector(shot.target);
         const float aspect = static_cast<float>(width) / height;
+        const glm::mat4 view = glm::lookAt(camera, target, glm::vec3(0, 1, 0));
+        const glm::mat4 projection = glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f);
+        sky.draw(view, projection);
         shader.use();
-        shader.matrix("view", glm::lookAt(camera, target, glm::vec3(0, 1, 0)));
-        shader.matrix("projection", glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f));
+        shader.matrix("view", view);
+        shader.matrix("projection", projection);
         shader.vector("cameraPosition", camera);
         shader.vector("lightPosition", glm::vec3(-15, 35, 20));
         shader.integer("diffuseMap", 0);
+        shader.integer("skyEnvironmentMap", 1);
         shader.integer("bumpEnabled", bump ? 1 : 0);
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(bump ? 1 : 0, 0, 0));
@@ -174,6 +226,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
         gate.draw(shader, white.handle, glm::vec3(1), paving.handle);
+        if (monument) {
+            shader.matrix("model", monumentModel);
+            monument->draw(shader, white.handle, glm::vec3(1));
+        }
         const auto box = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
             const glm::vec3 extent = cube.maximum() - cube.minimum();
             glm::mat4 transform = glm::translate(glm::mat4(1), position);
@@ -206,8 +262,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             }
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        box({2.5f, 3.65f, 8}, {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
-        shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, animation::flagHeight(seconds), 8)));
+        box({animation::flagPoleX, 3.65f + animation::flagBaseOffset, animation::flagPoleZ},
+            {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
+        shader.matrix("model", glm::translate(glm::mat4(1),
+            glm::vec3(animation::flagPoleX, animation::flagHeight(seconds), animation::flagPoleZ)));
         shader.vector("animationState", glm::vec3(seconds, 1, 0));
         shader.vector("surfaceState", glm::vec3(0, 1, 0));
         flag.draw(shader, white.handle, glm::vec3(1));

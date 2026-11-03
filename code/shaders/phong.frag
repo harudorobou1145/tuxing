@@ -11,6 +11,7 @@ uniform int unlit;
 uniform float smokeAlpha;
 uniform vec3 animationState;
 uniform sampler2D diffuseMap;
+uniform sampler2D skyEnvironmentMap;
 uniform vec3 lightPosition;
 uniform vec3 cameraPosition;
 uniform vec3 tint;
@@ -61,6 +62,16 @@ void main() {
         albedo = mix(vec3(0.85, 0.025, 0.045), vec3(1.0, 0.85, 0.04), stars);
     }
     vec3 color = albedo * (0.24 + 0.76 * diffuse) + vec3(1.0, 0.9, 0.7) * 0.35 * specular;
+    if (pavingSurface == 1) {
+        // The exported terrain spans hundreds of scene units. Fade its remote
+        // horizon into the same panorama instead of showing a dark backdrop band.
+        vec3 direction = normalize(worldPosition - cameraPosition);
+        const float pi = 3.14159265359;
+        vec2 skyUV = vec2(atan(direction.z, direction.x) / (2.0 * pi) + 0.5,
+                          asin(clamp(direction.y, -1.0, 1.0)) / pi + 0.5);
+        float haze = smoothstep(90.0, 280.0, length(worldPosition.xz - cameraPosition.xz));
+        color = mix(color, texture(skyEnvironmentMap, skyUV).rgb, haze);
+    }
     if (surfaceState.y > 0.5) {
         float weave = sin(uv.x * 1200.0) * sin(uv.y * 800.0);
         float weaveVisibility = 1.0 - smoothstep(0.001, 0.006, max(fwidth(uv.x), fwidth(uv.y)));

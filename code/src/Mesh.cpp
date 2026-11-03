@@ -66,7 +66,7 @@ bool isFence(const std::string& name) {
 }
 }
 
-Mesh::Mesh(const std::string& objPath) {
+Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument) {
     tinyobj::ObjReader reader;
     tinyobj::ObjReaderConfig config;
     config.triangulate = true;
@@ -128,6 +128,9 @@ Mesh::Mesh(const std::string& objPath) {
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
         if (isFence(shape.name)) continue;
+        // The animated pole replaces these two exact source objects; keep its pedestal.
+        if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
+        if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
         for (const auto& index : shape.mesh.indices) {
             if (index.vertex_index < 0 || static_cast<std::size_t>(3 * index.vertex_index + 2) >= attributes.vertices.size()) {
                 throw std::runtime_error("OBJ has invalid position index");
@@ -159,18 +162,45 @@ Mesh::Mesh(const std::string& objPath) {
             / "textures" / "roof_glazed_tiles.png", true);
         if (roofTexture) textures.push_back(roofTexture);
     }
+    GLuint raisedPlazaTexture = 0;
+    if (tiananmen && std::any_of(reader.GetShapes().begin(), reader.GetShapes().end(),
+        [](const auto& shape) { return shape.name == "Floor/Plancher.1"; })) {
+        raisedPlazaTexture = loadDecal(std::filesystem::u8path(objPath).parent_path() / "tile_2.jpeg", true);
+        if (raisedPlazaTexture) textures.push_back(raisedPlazaTexture);
+    }
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
         if (isFence(shape.name)) continue;
+        if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
+        if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
         const bool roof = roofTexture && shape.name.find("tiananmen_square_Jaune,_toit") == 0;
+        // This dedicated terrain mesh has uneven heights up to y=132.94.
+        // Classifying it by a per-triangle height threshold leaves brown patches.
+        const bool plazaGround = tiananmen && shape.name == "Floor/Plancher.1";
         const bool groundObject = tiananmen && (shape.name == "Floor/Plancher.1"
             || shape.name == "Bottom" || shape.name == "Bottom_1"
             || shape.name == "Tour_centre_Square" || shape.name == "Cube");
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
-            bool ground = false;
-            if (groundObject) {
+            bool ground = plazaGround;
+            bool raisedPlaza = false;
+            if (plazaGround && raisedPlazaTexture) {
+                glm::vec3 center(0);
+                float lowest = 1.0e30f;
+                for (int corner = 0; corner < 3; ++corner) {
+                    const auto index = 3 * shape.mesh.indices[offset + corner].vertex_index;
+                    center += glm::vec3(attributes.vertices[index], attributes.vertices[index + 1], attributes.vertices[index + 2]);
+                    lowest = std::min(lowest, attributes.vertices[index + 1]);
+                }
+                center /= 3.0f;
+                // The raised plaza has noisy heights (~35..133), whereas the
+                // surrounding pavement is near zero. Keep the cutoff below its
+                // full top surface so it cannot split into alternating materials.
+                raisedPlaza = lowest > 20.0f && center.x > -11600.0f && center.x < 7700.0f
+                    && center.z > 11300.0f && center.z < 60000.0f;
+            }
+            if (groundObject && !plazaGround) {
                 glm::vec3 points[3];
                 for (int k = 0; k < 3; ++k) {
                     const int index = shape.mesh.indices[offset + k].vertex_index;
@@ -183,7 +213,7 @@ Mesh::Mesh(const std::string& objPath) {
             }
             const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;
             const bool validMaterial = material >= 0 && static_cast<std::size_t>(material) < materials.size();
-            const GLuint texture = roof ? roofTexture : validMaterial ? materialTextures[material] : 0;
+            const GLuint texture = raisedPlaza ? raisedPlazaTexture : roof ? roofTexture : validMaterial ? materialTextures[material] : 0;
             const glm::vec3 color = roof || (soldier && texture) ? glm::vec3(1.0f) : validMaterial
                 ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
                 : tiananmen ? palette::tiananmenColor(shape.name) : glm::vec3(1.0f);
@@ -321,7 +351,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
             const bool ground = batch.ground && paving != 0;
             shader.integer("pavingSurface", ground ? 1 : 0);
             shader.integer("trackSurface", batch.track ? 1 : 0);
-            glBindTexture(GL_TEXTURE_2D, ground ? paving : batch.texture ? batch.texture : fallback);
+            glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : ground ? paving : fallback);
             shader.vector("tint", ground ? glm::vec3(0.92f) : tint * batch.color);
             glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
         }

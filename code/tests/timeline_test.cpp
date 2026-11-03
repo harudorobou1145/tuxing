@@ -16,11 +16,15 @@ int main() {
     assert(animation::aircraft(26).x == -18);
     assert(animation::aircraft(31).x == 20);
     assert(animation::aircraft(35).x == 15);
-    assert(animation::flagHeight(0) == 1.35f);
-    assert(std::abs(animation::flagHeight(26) - 5.55f) < 0.001f);
+    assert(animation::flagHeight(0) == 1.35f + animation::flagBaseOffset);
+    assert(animation::flagHeight(0.5f) > animation::flagHeight(0));
+    assert(animation::flagHeight(2.9f) < animation::flagHeight(3.0f));
+    assert(std::abs(animation::flagHeight(3.0f) - (5.55f + animation::flagBaseOffset)) < 0.001f);
+    assert(std::abs(animation::flagHeight(26) - (5.55f + animation::flagBaseOffset)) < 0.001f);
     const auto flagClose = animation::shot(26);
-    assert(std::abs(flagClose.camera.x - 3.7f) < 0.001f);
-    assert(flagClose.camera.z > 8.4f && flagClose.camera.z < 8.8f);
+    assert(std::abs(flagClose.camera.x - (animation::flagPoleX + 1.2f)) < 0.001f);
+    assert(flagClose.camera.z > animation::flagPoleZ + 0.4f
+        && flagClose.camera.z < animation::flagPoleZ + 0.8f);
     assert(flagClose.camera.y > animation::flagHeight(26));
     assert(flagClose.camera.y < animation::flagHeight(26) + 1.6f);
     assert(animation::shot(28).camera.y > animation::flagHeight(28) + 1.6f);

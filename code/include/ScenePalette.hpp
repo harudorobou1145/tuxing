@@ -11,6 +11,7 @@ inline const glm::vec3 stoneWhite{0.88f, 0.85f, 0.77f};
 inline const glm::vec3 standRed{0.46f, 0.055f, 0.045f};
 
 inline glm::vec3 tiananmenColor(const std::string& objectName) {
+    if (objectName == "heroes_monument") return stoneWhite;
     // The source exporter gave the paired reviewing stands generic Cube names.
     // Match only these known parts; other Cube objects include ground/buildings.
     static const std::array<const char*, 12> standParts = {
