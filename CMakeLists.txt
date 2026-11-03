@@ -32,6 +32,11 @@ if(BUILD_SCENE)
     # Gate walls contain concave polygons around the archways. Use robust
     # triangulation so these polygons retain their complete surface.
     target_compile_definitions(tinyobjloader PRIVATE TINYOBJLOADER_USE_MAPBOX_EARCUT)
+    if(MSVC)
+        target_compile_options(tinyobjloader PRIVATE /FIcstdint)
+    else()
+        target_compile_options(tinyobjloader PRIVATE -include cstdint)
+    endif()
     if(BUILD_TESTING)
         add_executable(wall_triangulation_test code/tests/wall_triangulation_test.cpp)
         target_link_libraries(wall_triangulation_test PRIVATE tinyobjloader)

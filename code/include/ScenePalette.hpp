@@ -22,6 +22,13 @@ inline glm::vec3 tiananmenColor(const std::string& objectName) {
     if (objectName.find("tiananmen_square_rouge,_brique") == 0) return wallRed;
     if (objectName.find("tiananmen_square_Jaune,_toit") == 0) return roofGold;
     if (objectName.find("tiananmen_square_blanc") == 0) return stoneWhite;
-    return glm::vec3(1.0f);
+    static const std::array<glm::vec3, 4> buildingColors = {
+        glm::vec3(0.48f, 0.29f, 0.23f), glm::vec3(0.68f, 0.53f, 0.32f),
+        glm::vec3(0.30f, 0.46f, 0.45f), glm::vec3(0.39f, 0.48f, 0.60f)};
+    unsigned int colorIndex = 0;
+    for (unsigned char character : objectName) {
+        colorIndex = colorIndex * 31u + character;
+    }
+    return buildingColors[colorIndex % buildingColors.size()];
 }
 }

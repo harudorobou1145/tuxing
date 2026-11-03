@@ -79,8 +79,8 @@ glm::mat4 placement(const Mesh& mesh, glm::vec3 position, float size, float yaw 
 
 glm::vec3 aircraftPosition(float t, int wing) {
     const auto point = vector(animation::aircraft(t));
-    const auto tangent = vector(animation::aircraft(std::min(30.0f, t + 0.02f)))
-        - vector(animation::aircraft(std::max(20.0f, t - 0.02f)));
+    const auto tangent = vector(animation::aircraft(std::min(animation::duration, t + 0.02f)))
+        - vector(animation::aircraft(std::max(animation::aircraftStart, t - 0.02f)));
     const glm::vec3 forward = glm::length(tangent) > 0.001f ? glm::normalize(tangent) : glm::vec3(1, 0, 0);
     const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
     return point - std::abs(wing) * 2.5f * forward + wing * 2.2f * right;
@@ -125,7 +125,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 6> captureTimes = {2.5f, 7.5f, 12.5f, 19.5f, 23.0f, 28.0f};
+    const std::array<float, 9> captureTimes = {2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -142,8 +142,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const bool left = glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS;
         const bool right = glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS;
         const bool toggleBump = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
-        if (left && !previousLeft) seconds = std::max(0.0f, (animation::shot(seconds).index - 1) * 5.0f);
-        if (right && !previousRight) seconds = std::min(24.0f, (animation::shot(seconds).index + 1) * 5.0f);
+        if (left && !previousLeft) seconds = animation::shotTimes[std::max(0, animation::shot(seconds).index - 1)];
+        if (right && !previousRight) seconds = animation::shotTimes[std::min(5, animation::shot(seconds).index + 1)];
         if (toggleBump && !previousBump) bump = !bump;
         previousLeft = left; previousRight = right; previousBump = toggleBump;
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -162,7 +162,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const float aspect = static_cast<float>(width) / height;
         shader.use();
         shader.matrix("view", glm::lookAt(camera, target, glm::vec3(0, 1, 0)));
-        shader.matrix("projection", glm::perspective(glm::radians(50.0f), aspect, 0.1f, 1800.0f));
+        shader.matrix("projection", glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f));
         shader.vector("cameraPosition", camera);
         shader.vector("lightPosition", glm::vec3(-15, 35, 20));
         shader.integer("diffuseMap", 0);
@@ -184,23 +184,22 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             shader.vector("tint", color);
             cube.draw();
         };
-        box({0, 0.055f, 6}, {70, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
+        box({0, 0.055f, animation::paradeDepth}, {100, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
         for (int stripe = -12; stripe <= 12; ++stripe)
-            box({stripe * 2.5f, 0.075f, 6}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
+            box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         for (std::size_t index = 0; index < tanks.size(); ++index) {
-            const float horizontal = -10.0f + (seconds - 3.0f) * 1.7f - index * 7.0f;
+            const float horizontal = animation::tankPosition(seconds, static_cast<int>(index));
             const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
-            const float localSpeed = 1.7f * std::max({extent.x, extent.y, extent.z}) / 6.0f;
+            const float localSpeed = animation::tankSpeed * std::max({extent.x, extent.y, extent.z}) / 6.0f;
             shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
-            shader.matrix("model", placement(*tanks[index], {horizontal, 0.08f, 5}, 6.0f, glm::radians(180.0f)));
+            shader.matrix("model", placement(*tanks[index], {horizontal, 0.08f, animation::paradeDepth}, 6.0f, glm::radians(180.0f)));
             tanks[index]->draw(shader, white.handle, glm::vec3(1));
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        for (int row = 0; row < 25; ++row) {
-            for (int column = 0; column < 4; ++column) {
-                const float lastTank = -10.0f + (seconds - 3.0f) * 1.7f - 21.0f;
-                const float horizontal = lastTank - 6.0f - row * 1.2f;
-                const float depth = 5.0f + (column - 1.5f) * 0.8f;
+        for (int row = 0; row < 4; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                const float horizontal = animation::soldierPosition(seconds, row);
+                const float depth = animation::paradeDepth + (column - 1.0f) * 1.1f;
                 shader.vector("animationState", glm::vec3(seconds, -1, 0));
                 shader.matrix("model", placement(soldier, {horizontal, 0.08f, depth}, 1.7f, glm::radians(90.0f)));
                 soldier.draw(shader, white.handle, glm::vec3(1));
@@ -208,7 +207,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         box({2.5f, 3.65f, 8}, {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
-        shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, 5.55f, 8)));
+        shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(2.5f, animation::flagHeight(seconds), 8)));
         shader.vector("animationState", glm::vec3(seconds, 1, 0));
         shader.vector("surfaceState", glm::vec3(0, 1, 0));
         flag.draw(shader, white.handle, glm::vec3(1));
@@ -295,10 +294,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
         }
-        if (seconds >= 19.5f) {
+        if (seconds >= animation::aircraftStart) {
             const auto point = vector(animation::aircraft(seconds));
-            const auto tangent = vector(animation::aircraft(std::min(30.0f, seconds + 0.02f)))
-                - vector(animation::aircraft(std::max(20.0f, seconds - 0.02f)));
+            const auto tangent = vector(animation::aircraft(std::min(animation::duration, seconds + 0.02f)))
+                - vector(animation::aircraft(std::max(animation::aircraftStart, seconds - 0.02f)));
             const float yaw = glm::length(tangent) > 0.001f ? std::atan2(tangent.x, tangent.z) : glm::radians(90.0f);
             const glm::vec3 forward = glm::length(tangent) > 0.001f ? glm::normalize(tangent) : glm::vec3(1, 0, 0);
             const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 1, 0)));
@@ -356,9 +355,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
         }
-        const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast"};
+        const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast", "Finale"};
         const std::string title = "Parade Animation | " + std::string(names[shot.index]) + " | "
-            + std::to_string(seconds).substr(0, 4) + " / 25 s" + (paused ? " | Paused" : "");
+            + std::to_string(seconds).substr(0, 4) + " / "
+            + std::to_string(static_cast<int>(animation::duration)) + " s" + (paused ? " | Paused" : "");
         glfwSetWindowTitle(window, title.c_str());
         if (!captureDirectory.empty()) {
             std::vector<unsigned char> pixels(static_cast<std::size_t>(width) * height * 4);

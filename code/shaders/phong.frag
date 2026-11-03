@@ -61,6 +61,18 @@ void main() {
         albedo = mix(vec3(0.85, 0.025, 0.045), vec3(1.0, 0.85, 0.04), stars);
     }
     vec3 color = albedo * (0.24 + 0.76 * diffuse) + vec3(1.0, 0.9, 0.7) * 0.35 * specular;
+    if (surfaceState.y > 0.5) {
+        float weave = sin(uv.x * 1200.0) * sin(uv.y * 800.0);
+        float weaveVisibility = 1.0 - smoothstep(0.001, 0.006, max(fwidth(uv.x), fwidth(uv.y)));
+        float foldShade = 0.78 + 0.22 * abs(normal.z);
+        float transmission = pow(max(dot(-lightDirection, viewDirection), 0.0), 3.0);
+        float backLight = max(dot(-normal, lightDirection), 0.0);
+        float fabricSheen = pow(1.0 - abs(dot(normal, viewDirection)), 4.0);
+        color = albedo * (0.20 + 0.74 * diffuse) * foldShade
+            * (1.0 + 0.035 * weave * weaveVisibility)
+            + albedo * vec3(1.0, 0.35, 0.22) * (0.28 * backLight + 0.22 * transmission)
+            + vec3(1.0, 0.65, 0.45) * (0.10 * specular + 0.10 * fabricSheen);
+    }
     if (unlit == 1) {
         float radial = 1.0 - smoothstep(0.35, 1.0, distance(uv, vec2(0.5)) * 2.0);
         fragmentColor = vec4(albedo, smokeAlpha * radial);

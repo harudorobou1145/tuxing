@@ -26,28 +26,45 @@ void main() {
         vec2 limbWeights = sideWeight * vec2(
             smoothstep(0.20, 0.32, abs(aPosition.x)) * smoothstep(1.12, 1.30, aPosition.y),
             (1.0 - smoothstep(0.76, 0.94, aPosition.y)) * smoothstep(0.015, 0.075, abs(aPosition.x)));
-        float stride = sin(animationState.x * 7.0);
+        float stride = sin(animationState.x * 4.8);
+        stride = sign(stride) * smoothstep(0.0, 0.85, abs(stride));
         if (abs(limbWeights.x) > 0.001) {
             float side = sign(limbWeights.x);
-            vec3 shoulder = vec3(side * 0.21, 1.43, 0);
-            mat3 rotation = rotateX(side * stride * 0.48) * rotateZ(-side * 1.35);
-            position = mix(position, shoulder + rotation * (position - shoulder), abs(limbWeights.x));
-            normal = normalize(mix(normal, rotation * normal, abs(limbWeights.x)));
+            vec3 shoulder = vec3(side * 0.24, 1.43, 0);
+            float forwardSwing = smoothstep(-0.65, 0.65, side * stride);
+            float elbowWeight = smoothstep(0.46, 0.58, abs(aPosition.x));
+            vec3 elbow = vec3(side * 0.52, 1.43, 0);
+            mat3 elbowRotation = rotateZ(side * forwardSwing * 1.45);
+            vec3 bentPosition = mix(aPosition, elbow + elbowRotation * (aPosition - elbow), elbowWeight);
+            vec3 bentNormal = normalize(mix(aNormal, elbowRotation * aNormal, elbowWeight));
+            mat3 rotation = rotateX(mix(-0.32, 0.90, forwardSwing)) * rotateZ(-side * 1.45);
+            position = mix(position, shoulder + rotation * (bentPosition - shoulder), abs(limbWeights.x));
+            normal = normalize(mix(normal, rotation * bentNormal, abs(limbWeights.x)));
         }
-        if (abs(limbWeights.y) > 0.001) {
+        else if (abs(limbWeights.y) > 0.001) {
             float side = sign(limbWeights.y);
             vec3 hip = vec3(side * 0.10, 0.90, 0);
-            mat3 rotation = rotateX(-side * stride * 0.52);
+            float swing = side * stride;
+            float angle = -max(swing, 0.0) * 0.58 - min(swing, 0.0) * 0.12;
+            mat3 rotation = rotateX(angle);
             position = mix(position, hip + rotation * (position - hip), abs(limbWeights.y));
             normal = normalize(mix(normal, rotation * normal, abs(limbWeights.y)));
         }
-        position.y += 0.045 * abs(stride);
+        position.y += 0.025;
     }
     if (animationState.y > 0.5) {
-        float phase = position.x * 4.5 - animationState.x * 4.0 + position.y * 2.0;
-        position.z += 0.16 * position.x * sin(phase);
-        normal = normalize(vec3(-0.16 * sin(phase) - 0.72 * position.x * cos(phase),
-                                -0.32 * position.x * cos(phase), 1.0));
+        float time = animationState.x;
+        float gust = 0.78 + 0.16 * sin(time * 1.3) + 0.06 * sin(time * 3.7);
+        float phase = position.x * 4.5 - time * 4.0 + position.y * 2.0;
+        float ripple = position.x * 13.0 - time * 8.5 + position.y * 5.0;
+        float flutter = position.x * 23.0 - time * 13.0 - position.y * 7.0;
+        float wave = 0.13 * sin(phase) + 0.025 * sin(ripple) + 0.009 * sin(flutter);
+        float slopeX = gust * (wave + position.x * (0.585 * cos(phase)
+            + 0.325 * cos(ripple) + 0.207 * cos(flutter)));
+        float slopeY = gust * position.x * (0.26 * cos(phase)
+            + 0.125 * cos(ripple) - 0.063 * cos(flutter));
+        position.z += gust * position.x * wave;
+        normal = normalize(vec3(-slopeX, -slopeY, 1.0));
     }
     vec4 world = model * vec4(position, 1.0);
     worldPosition = world.xyz;
