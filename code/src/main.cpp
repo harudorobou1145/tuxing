@@ -213,7 +213,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 10> captureTimes = {0.0f, 2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f};
+    const std::array<float, 12> captureTimes = {0.0f, 2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f, 34.0f, 35.0f};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -290,6 +290,31 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             shader.vector("tint", color);
             cube.draw();
         };
+        if (fullScene) {
+            const float sceneScale = 18.0f / 7877.01f;
+            const auto sourceBox = [&](glm::vec3 center, glm::vec3 size, glm::vec3 color) {
+                box(glm::vec3(gateModel * glm::vec4(center, 1)), size * sceneScale, color);
+            };
+            for (int column = 0; column < 19; ++column) {
+                const float depth = 17400.0f + column * 1060.0f;
+                sourceBox({14060, 1000, depth}, {260, 1700, 280}, {0.78f, 0.77f, 0.70f});
+                sourceBox({14060, 160, depth}, {390, 180, 420}, {0.65f, 0.65f, 0.60f});
+                sourceBox({14060, 1860, depth}, {410, 180, 440}, {0.85f, 0.83f, 0.74f});
+            }
+            for (int tier = 0; tier < 3; ++tier)
+                sourceBox({14100, 2010.0f + tier * 110.0f, 27000},
+                    {700.0f + tier * 110.0f, 85, 21800.0f + tier * 100.0f}, {0.72f, 0.71f, 0.64f});
+            const glm::vec3 monumentCenter = glm::vec3(gateModel * glm::vec4(-1509.614f, 134, 30016.281f, 1));
+            for (int side : {-1, 1}) {
+                for (int post = -5; post <= 5; ++post) {
+                    const float along = post * 0.42f;
+                    box(monumentCenter + glm::vec3(along, 0.48f, side * 2.36f), {0.10f, 0.62f, 0.10f}, {0.82f, 0.83f, 0.79f});
+                    box(monumentCenter + glm::vec3(side * 2.36f, 0.48f, along), {0.10f, 0.62f, 0.10f}, {0.82f, 0.83f, 0.79f});
+                }
+                box(monumentCenter + glm::vec3(0, 0.65f, side * 2.36f), {4.65f, 0.09f, 0.10f}, {0.87f, 0.86f, 0.81f});
+                box(monumentCenter + glm::vec3(side * 2.36f, 0.65f, 0), {0.10f, 0.09f, 4.65f}, {0.87f, 0.86f, 0.81f});
+            }
+        }
         box({0, 0.055f, animation::paradeDepth}, {100, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
         for (int stripe = -12; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
@@ -417,43 +442,60 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             };
             glBindTexture(GL_TEXTURE_2D, white.handle);
             glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             glDepthMask(GL_FALSE);
-            shader.integer("unlit", 1);
+            shader.integer("unlit", 3);
             for (const auto& fw : fireworks) {
                 const float t = std::fmod(seconds + fw.offset, fw.period);
                 if (t < fw.rise) {
-                    // 上升阶段：火箭头 + 尾迹
                     const float p = t / fw.rise;
-                    const glm::vec3 pos = glm::mix(fw.launch, fw.peak, p);
-                    const glm::vec3 step = fw.peak - fw.launch;
-                    for (int k = 1; k <= 4; ++k) {
-                        const glm::vec3 trail = pos - step * (0.4f * k);
-                        puff(trail, 0.35f, glm::vec3(1.0f, 0.85f, 0.55f), 0.5f * (1.0f - k / 5.0f));
+                    const auto ascent = [&](float progress) {
+                        return glm::mix(fw.launch, fw.peak, progress * (1.6f - 0.6f * progress));
+                    };
+                    for (int sample = 16; sample >= 1; --sample) {
+                        const float history = p - sample * 0.012f;
+                        if (history < 0.0f) continue;
+                        const float fade = 1.0f - sample / 17.0f;
+                        puff(ascent(history), 0.10f + 0.12f * fade,
+                            glm::vec3(1.0f, 0.55f, 0.18f), 0.48f * fade);
                     }
-                    puff(pos, 0.55f, glm::vec3(1.0f, 0.92f, 0.70f), 0.95f);
+                    puff(ascent(p), 0.38f, glm::vec3(1.0f, 0.93f, 0.72f), 1.0f);
                 } else {
-                    // 绽放阶段：火花散开
                     const float burst = fw.period - fw.rise;
-                    const float bp = (t - fw.rise) / burst;
-                    if (bp >= 1.0f) continue;
-                    const float radius = fw.radius * bp;
-                    const float alpha = 1.0f - bp * bp;
-                    const float droop = 2.5f * bp * bp;
-                    for (int m = 0; m < fw.streaks; ++m) {
-                        const float angle = 6.28318f * m / fw.streaks;
-                        const float scatter = 1.0f + 0.18f * std::sin(m * 2.7f + fw.streaks);
-                        const glm::vec3 dir = fwRight * std::cos(angle) + fwUp * std::sin(angle);
-                        const float r = radius * scatter;
-                        puff(fw.peak + dir * r - fwUp * droop, 0.8f, fw.color, alpha);
-                        for (int k = 1; k <= 3; ++k) {
-                            const float tailR = r - 0.5f * k;
-                            if (tailR < 0.1f) break;
-                            const float tailSize = 0.8f * (1.0f - 0.28f * k);
-                            puff(fw.peak + dir * tailR - fwUp * droop, tailSize, fw.color, alpha * (1.0f - 0.25f * k));
+                    const float age = t - fw.rise;
+                    const int particles = fw.streaks * 3;
+                    for (int particle = 0; particle < particles; ++particle) {
+                        const float seed = 0.5f + 0.5f * std::sin(particle * 127.1f + fw.offset * 311.7f);
+                        const float lifetime = burst * (0.65f + 0.35f * seed);
+                        if (age >= lifetime) continue;
+                        const float vertical = 1.0f - 2.0f * (particle + 0.5f) / particles;
+                        const float horizontal = std::sqrt(std::max(0.0f, 1.0f - vertical * vertical));
+                        const float angle = particle * 2.399963f + fw.offset;
+                        const glm::vec3 direction(horizontal * std::cos(angle), vertical, horizontal * std::sin(angle));
+                        const glm::vec3 velocity = direction * (fw.radius * (0.85f + 0.3f * seed));
+                        const auto trajectory = [&](float elapsed) {
+                            return fw.peak + velocity * ((1.0f - std::exp(-1.15f * elapsed)) / 1.15f)
+                                + glm::vec3(0.12f * elapsed, -1.3f * elapsed * elapsed, 0);
+                        };
+                        const float remaining = 1.0f - age / lifetime;
+                        const float flicker = 0.85f + 0.15f * std::sin(age * 35.0f + particle * 2.7f);
+                        const float alpha = std::pow(remaining, 0.7f) * flicker;
+                        const glm::vec3 color = glm::mix(glm::vec3(1.0f, 0.48f, 0.12f), fw.color, remaining);
+                        for (int sample = 9; sample >= 1; --sample) {
+                            const float history = age - sample * 0.018f;
+                            if (history < 0.0f) continue;
+                            const float fade = 1.0f - sample / 10.0f;
+                            puff(trajectory(history), 0.08f + 0.09f * fade, color, alpha * fade * 0.45f);
                         }
+                        const glm::vec3 position = trajectory(age);
+                        puff(position, 0.48f, color, alpha * 0.12f);
+                        puff(position, 0.16f, glm::mix(color, glm::vec3(1.0f), 0.55f), alpha);
                     }
-                    if (bp < 0.2f) puff(fw.peak, 1.3f, glm::vec3(1.0f), 0.9f * (1.0f - bp / 0.2f));
+                    if (age < 0.18f) {
+                        const float flash = 1.0f - age / 0.18f;
+                        puff(fw.peak, 1.8f + age * 4.0f, fw.color, flash * 0.45f);
+                        puff(fw.peak, 0.65f, glm::vec3(1.0f), flash);
+                    }
                 }
             }
             shader.floating("smokeAlpha", 1.0f);
@@ -495,22 +537,37 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glDepthMask(GL_FALSE);
             shader.integer("unlit", 1);
-            const int segments = 40;
-            const float trailDuration = 2.5f;
+            shader.integer("unlit", 2);
+            const int segments = 160;
+            const float trailDuration = 3.2f;
             for (int wing = -2; wing <= 2; ++wing) {
                 shader.vector("tint", smokeColors[wing + 2]);
-                for (int k = 0; k < segments; ++k) {
+                for (int k = segments - 1; k >= 0; --k) {
                     const float tFar = seconds - trailDuration * (k + 1) / segments;
                     const float tNear = seconds - trailDuration * k / segments;
                     const float age = (k + 0.5f) / segments;
-                    glm::vec3 mid = (aircraftPosition(tFar, wing) + aircraftPosition(tNear, wing)) * 0.5f;
-                    mid += camRight * (std::sin(seconds * 3.0f + wing * 1.3f + k * 0.6f) * 0.4f * age);
-                    mid += camUp * (std::sin(seconds * 2.2f + k * 0.45f) * 0.25f * age);
-                    const float puffWidth = 0.35f + 1.1f * age;
-                    shader.floating("smokeAlpha", 1.0f - age * age);
+                    if (tFar < animation::aircraftStart) continue;
+                    const glm::vec3 trailStart = aircraftPosition(tFar, wing);
+                    const glm::vec3 trailEnd = aircraftPosition(tNear, wing);
+                    const glm::vec3 trailStep = trailEnd - trailStart;
+                    const glm::vec3 trailForward = glm::length(trailStep) > 0.001f ? glm::normalize(trailStep) : forward;
+                    const float smokeAge = seconds - (tFar + tNear) * 0.5f;
+                    const float emission = (tFar + tNear) * 0.5f;
+                    glm::vec3 mid = (trailStart + trailEnd) * 0.5f - trailForward * 1.35f;
+                    mid += glm::vec3(0.32f * smokeAge, 0.12f * smokeAge, 0);
+                    mid += glm::vec3(std::sin(emission * 4.1f + wing), std::sin(emission * 3.3f),
+                        std::cos(emission * 3.7f + wing)) * (0.20f * smokeAge);
+                    const float puffWidth = 0.20f + 0.68f * std::sqrt(smokeAge);
+                    const glm::vec2 projected(glm::dot(trailStep, camRight), glm::dot(trailStep, camUp));
+                    const float projectedLength = glm::length(projected);
+                    const glm::vec2 axis = projectedLength > 0.001f ? projected / projectedLength : glm::vec2(1, 0);
+                    const glm::vec3 ribbonAlong = camRight * axis.x + camUp * axis.y;
+                    const glm::vec3 ribbonAcross = -camRight * axis.y + camUp * axis.x;
+                    shader.floating("smokeAlpha", 0.38f * std::pow(1.0f - age, 1.4f)
+                        * std::exp(-glm::length(mid - camera) * 0.0028f));
                     glm::mat4 billboard(1.0f);
-                    billboard[0] = glm::vec4(camRight * puffWidth, 0.0f);
-                    billboard[1] = glm::vec4(camUp * puffWidth, 0.0f);
+                    billboard[0] = glm::vec4(ribbonAlong * (projectedLength + puffWidth * 1.8f), 0.0f);
+                    billboard[1] = glm::vec4(ribbonAcross * puffWidth, 0.0f);
                     billboard[2] = glm::vec4(camForward, 0.0f);
                     billboard[3] = glm::vec4(mid, 1.0f);
                     billboard = glm::translate(billboard, glm::vec3(-0.5f, -0.5f, 0.0f));

@@ -72,12 +72,21 @@ struct Shot {
 };
 
 inline Point aircraft(float seconds) {
+    Point position;
     if (seconds <= aircraftTurn) {
-        return curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
+        position = curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
                      segment(seconds, aircraftStart, aircraftTurn));
+    } else {
+        position = curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
+                         segment(seconds, aircraftTurn, duration));
     }
-    return curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
-                 segment(seconds, aircraftTurn, duration));
+    position.x = -24.0f + (position.x + 24.0f) * 1.6f;
+    const float departure = segment(seconds, aircraftTurn, duration);
+    const float acceleration = departure * departure * departure;
+    position.x += 55.0f * acceleration;
+    position.y += 15.0f * acceleration;
+    position.z -= 1200.0f * acceleration;
+    return position;
 }
 
 inline Shot shot(float seconds) {
@@ -96,14 +105,18 @@ inline Shot shot(float seconds) {
         {soldierPosition(12) - 2, 1.1f, paradeDepth},
         {soldierPosition(21) - 2, 1.1f, paradeDepth}, aircraft(aircraftStart)}};
     const std::array<Point, 6> targetVelocities{{{0, 0, 0}, {0, 0, 0},
-        {-2.5f, 0, 0}, {soldierSpeed, 0, 0}, {soldierSpeed, 0, 0}, {7.2f, 0, 1.2f}}};
+        {-2.5f, 0, 0}, {soldierSpeed, 0, 0}, {soldierSpeed, 0, 0}, {11.52f, 0, 1.2f}}};
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(
         std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);
     if (time >= aircraftStart) {
         Point camera = cameras.back();
         camera.x += cameraVelocities.back().x * (time - aircraftStart);
-        return {camera, aircraft(time), index};
+        // Follow the flypast, then ease toward the established finale framing.
+        const float departure = segment(time, aircraftTurn, duration);
+        const float settle = departure * departure * (3.0f - 2.0f * departure);
+        const Point target = mix(aircraft(time), {120, 55, -600}, settle);
+        return {camera, target, index};
     }
     const auto key = static_cast<std::size_t>(
         std::upper_bound(cameraTimes.begin(), cameraTimes.end(), time) - cameraTimes.begin() - 1);

@@ -29,6 +29,7 @@ private:
         bool track;
         bool ground = false;
         bool roof = false;
+        int architecture = 0;
     };
     std::vector<Batch> batches;
     std::vector<GLuint> textures;

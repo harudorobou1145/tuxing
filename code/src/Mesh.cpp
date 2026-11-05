@@ -217,9 +217,13 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument) {
             const glm::vec3 color = roof || (soldier && texture) ? glm::vec3(1.0f) : validMaterial
                 ? glm::vec3(materials[material].diffuse[0], materials[material].diffuse[1], materials[material].diffuse[2])
                 : tiananmen ? palette::tiananmenColor(shape.name) : glm::vec3(1.0f);
+            const int architecture = shape.name == "heroes_monument" ? 2
+                : tiananmen && (shape.name == "Bottom" || shape.name == "Bottom_1"
+                    || shape.name == "Toit_top" || shape.name == "Toit_top_1") ? 1 : 0;
             if (batches.empty() || batches.back().color != color || batches.back().texture != texture
-                || batches.back().track != track || batches.back().ground != ground || batches.back().roof != roof) {
-                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track, ground, roof});
+                || batches.back().track != track || batches.back().ground != ground || batches.back().roof != roof
+                || batches.back().architecture != architecture) {
+                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track, ground, roof, architecture});
             }
             batches.back().count += 3;
             Vertex triangle[3]{};
@@ -357,6 +361,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
     shader.integer("trackSurface", 0);
     shader.integer("roofSurface", 0);
     shader.integer("pavingSurface", 0);
+    shader.integer("architectureSurface", 0);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(vertexArray);
     if (batches.empty()) {
@@ -366,6 +371,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
         glDrawArrays(GL_TRIANGLES, 0, count);
     } else {
         for (const auto& batch : batches) {
+            shader.integer("architectureSurface", batch.architecture);
             shader.integer("roofSurface", batch.roof ? 1 : 0);
             const bool ground = batch.ground && paving != 0;
             shader.integer("pavingSurface", ground ? 1 : 0);
@@ -378,6 +384,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
     shader.integer("trackSurface", 0);
     shader.integer("pavingSurface", 0);
     shader.integer("roofSurface", 0);
+    shader.integer("architectureSurface", 0);
 }
 
 Mesh::Mesh(float width, float height, int columns, int rows) {
