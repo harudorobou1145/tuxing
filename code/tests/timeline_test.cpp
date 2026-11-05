@@ -37,16 +37,18 @@ int main() {
     assert(animation::flagHeight(2.9f) < animation::flagHeight(3.0f));
     assert(std::abs(animation::flagHeight(3.0f) - (5.55f + animation::flagBaseOffset)) < 0.001f);
     assert(std::abs(animation::flagHeight(26) - (5.55f + animation::flagBaseOffset)) < 0.001f);
-    const auto flagClose = animation::shot(26);
-    assert(std::abs(flagClose.camera.x - (animation::flagPoleX + 1.2f)) < 0.001f);
-    assert(flagClose.camera.z > animation::flagPoleZ + 0.4f
-        && flagClose.camera.z < animation::flagPoleZ + 1.0f);
-    assert(flagClose.camera.y > animation::flagHeight(26));
-    assert(flagClose.camera.y < animation::flagHeight(26) + 1.6f);
-    assert(animation::shot(28).camera.y > animation::flagHeight(28) + 1.6f);
-    assert(animation::shot(0).camera.z > 100);
-    assert(animation::shot(0).camera.y <= 6);
-    assert(animation::shot(0).target.y > animation::shot(0).camera.y);
+    const auto approachStart = animation::shot(0);
+    const auto approachEnd = animation::shot(animation::shotTimes[1]);
+    assert(approachStart.camera.x > animation::flagPoleX + 10);
+    assert(std::hypot(approachEnd.camera.x - animation::flagPoleX,
+                      approachEnd.camera.z - animation::flagPoleZ) < 7);
+    assert(approachEnd.camera.z < approachStart.camera.z);
+    const auto beforeTurn = animation::shot(0.1f).camera;
+    const auto afterTurn = animation::shot(animation::shotTimes[1] + 0.1f).camera;
+    assert(std::hypot(afterTurn.x - approachEnd.camera.x, afterTurn.z - approachEnd.camera.z)
+        < 0.4f * std::hypot(beforeTurn.x - approachStart.camera.x, beforeTurn.z - approachStart.camera.z));
+    assert(animation::shot(21).camera.x < animation::shot(12).camera.x);
+    assert(animation::shot(21).camera.z == animation::shot(12).camera.z);
     const auto march = animation::shot(animation::shotTimes[2]);
     assert(std::abs(march.target.x - (animation::soldierPosition(animation::shotTimes[2]) - 2)) < 0.01f);
     assert(march.target.z == animation::paradeDepth);
@@ -81,10 +83,6 @@ int main() {
                 + std::pow(next.camera.y - shot.camera.y, 2)
                 + std::pow(next.camera.z - shot.camera.z, 2)) * 60;
             assert(speed > 0.25f);
-            if (seconds >= 24.8f && seconds <= 27.5f) {
-                assert(next.camera.y > shot.camera.y);
-                assert(speed > 1.0f);
-            }
         }
         const auto aircraft = animation::aircraft(frame / 60.0f);
         assert(std::isfinite(aircraft.x) && std::isfinite(aircraft.y) && std::isfinite(aircraft.z));
@@ -95,6 +93,9 @@ int main() {
                 + std::pow(aircraft.y - shot.camera.y, 2)
                 + std::pow(aircraft.z - shot.camera.z, 2));
             assert(flightDistance > 48.0f);
+        }
+        if (seconds >= animation::aircraftStart) {
+            assert(shot.target.x == aircraft.x && shot.target.y == aircraft.y && shot.target.z == aircraft.z);
         }
         assert(std::isfinite(shot.camera.x) && std::isfinite(shot.target.y));
         const float distance = std::abs(shot.camera.x - shot.target.x)

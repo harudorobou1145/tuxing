@@ -345,8 +345,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             tanks[index]->draw(shader, white.handle, glm::vec3(1));
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        for (int row = 0; row < 4; ++row) {
-            for (int column = 0; column < 3; ++column) {
+        for (int row = 0; row < 25; ++row) {
+            for (int column = 0; column < 4; ++column) {
                 const float horizontal = animation::soldierPosition(seconds, row);
                 const float depth = animation::paradeDepth + (column - 1.0f) * 1.1f;
                 shader.vector("animationState", glm::vec3(seconds, -1, 0));

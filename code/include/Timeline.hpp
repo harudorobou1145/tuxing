@@ -71,56 +71,6 @@ struct Shot {
     int index;
 };
 
-inline Shot shot(float seconds) {
-    constexpr std::array<float, 9> cameraTimes{0, 5, 12, 21, 24.8f, 26, 28, 31, duration};
-    std::array<Point, 9> cameras{{{-55, 6, 105}, {-28, 4, 40},
-        {soldierPosition(shotTimes[2]) + 6, 2.8f, paradeDepth + 9}, {soldierPosition(shotTimes[3]) + 6, 3.0f, paradeDepth + 10},
-        {3.25f, 5.3f, 9.6f}, {3.7f, 6.7f, 8.8f}, {4.4f, 10, 18.5f}, {2, 12, 55}, {8, 14, 75}}};
-    std::array<Point, 9> targets{{{0, 9, -3}, {-4, 6, -3},
-        {soldierPosition(shotTimes[2]) - 2, 1.1f, paradeDepth}, {soldierPosition(shotTimes[3]) - 2, 1.1f, paradeDepth},
-        {3.6f, 6.0f, 8}, {3.9f, 7.0f, 7.8f}, {-8, 30, -17}, {20, 33, -24}, {43, 43, -48}}};
-    const auto moveWithFlag = [](Point& point) {
-        point.x += flagPoleX - 2.5f;
-        point.y += flagBaseOffset;
-        point.z += flagPoleZ - 8.0f;
-    };
-    for (int key : {4, 5, 6}) moveWithFlag(cameras[key]);
-    for (int key : {4, 5}) moveWithFlag(targets[key]);
-    const float time = std::clamp(seconds, 0.0f, duration);
-    const int index = std::min(static_cast<int>(
-        std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);
-    const int cameraIndex = std::min(static_cast<int>(
-        std::upper_bound(cameraTimes.begin(), cameraTimes.end(), time) - cameraTimes.begin()) - 1, 7);
-    const float parameter = segment(time, cameraTimes[cameraIndex], cameraTimes[cameraIndex + 1]);
-    const auto interpolate = [&](const auto& points, bool cameraPath) {
-        const auto velocity = [&](int key) {
-            if (key == 0 || key == 8) {
-                const int first = key == 0 ? 0 : 7;
-                const float interval = cameraTimes[first + 1] - cameraTimes[first];
-                return Point{(points[first + 1].x - points[first].x) / interval,
-                             (points[first + 1].y - points[first].y) / interval,
-                             (points[first + 1].z - points[first].z) / interval};
-            }
-            if (key == 2 || key == 3) return Point{soldierSpeed, 0, 0};
-            if (!cameraPath && (key == 4 || key == 5)) return Point{0.15f, 1.2f, -0.2f};
-            const float interval = cameraTimes[key + 1] - cameraTimes[key - 1];
-            return Point{(points[key + 1].x - points[key - 1].x) / interval,
-                         (points[key + 1].y - points[key - 1].y) / interval,
-                         (points[key + 1].z - points[key - 1].z) / interval};
-        };
-        const float interval = (cameraTimes[cameraIndex + 1] - cameraTimes[cameraIndex]) / 3.0f;
-        const auto startVelocity = velocity(cameraIndex);
-        const auto endVelocity = velocity(cameraIndex + 1);
-        const auto start = points[cameraIndex];
-        const auto end = points[cameraIndex + 1];
-        return curve(start, {start.x + startVelocity.x * interval, start.y + startVelocity.y * interval,
-                            start.z + startVelocity.z * interval},
-                     {end.x - endVelocity.x * interval, end.y - endVelocity.y * interval,
-                      end.z - endVelocity.z * interval}, end, parameter);
-    };
-    return {interpolate(cameras, true), interpolate(targets, false), index};
-}
-
 inline Point aircraft(float seconds) {
     if (seconds <= aircraftTurn) {
         return curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
@@ -128,5 +78,53 @@ inline Point aircraft(float seconds) {
     }
     return curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
                  segment(seconds, aircraftTurn, duration));
+}
+
+inline Shot shot(float seconds) {
+    constexpr std::array<float, 6> cameraTimes{0, 5, 8, 12, 21, aircraftStart};
+    // Approach from the east of the monument, round the flagpole on the east,
+    // then travel west along the plaza side of the parade road.
+    constexpr float roadSideDepth = 18.2f;
+    const std::array<Point, 6> cameras{{{11, 6.4f, 79},
+        {flagPoleX + 5.1f, 5.8f, flagPoleZ + 2.8f}, {0, 5.4f, roadSideDepth},
+        {-11, 4.9f, roadSideDepth}, {-27, 5.0f, roadSideDepth}, {-33, 5.4f, roadSideDepth}}};
+    const std::array<Point, 6> cameraVelocities{{{-0.5f, -0.05f, -12}, {-1.0f, -0.1f, -1.2f},
+        {-2.5f, -0.15f, 0}, {-2.2f, 0, 0}, {-1.4f, 0.08f, 0}, {-0.65f, 0, 0}}};
+    const Point raisedFlagCenter{flagPoleX + 1.2f, flagHeight(5) + 0.8f, flagPoleZ};
+    const std::array<Point, 6> targets{{raisedFlagCenter, raisedFlagCenter,
+        {tankPosition(8, 1), 1.4f, paradeDepth},
+        {soldierPosition(12) - 2, 1.1f, paradeDepth},
+        {soldierPosition(21) - 2, 1.1f, paradeDepth}, aircraft(aircraftStart)}};
+    const std::array<Point, 6> targetVelocities{{{0, 0, 0}, {0, 0, 0},
+        {-2.5f, 0, 0}, {soldierSpeed, 0, 0}, {soldierSpeed, 0, 0}, {7.2f, 0, 1.2f}}};
+    const float time = std::clamp(seconds, 0.0f, duration);
+    const int index = std::min(static_cast<int>(
+        std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);
+    if (time >= aircraftStart) {
+        Point camera = cameras.back();
+        camera.x += cameraVelocities.back().x * (time - aircraftStart);
+        return {camera, aircraft(time), index};
+    }
+    const auto key = static_cast<std::size_t>(
+        std::upper_bound(cameraTimes.begin(), cameraTimes.end(), time) - cameraTimes.begin() - 1);
+    const float parameter = segment(time, cameraTimes[key], cameraTimes[key + 1]);
+    const float handleTime = (cameraTimes[key + 1] - cameraTimes[key]) / 3.0f;
+    const auto interpolate = [&](const auto& points, const auto& velocities) {
+        const auto a = points[key];
+        const auto b = points[key + 1];
+        const auto va = velocities[key];
+        const auto vb = velocities[key + 1];
+        return curve(a, {a.x + va.x * handleTime, a.y + va.y * handleTime, a.z + va.z * handleTime},
+                     {b.x - vb.x * handleTime, b.y - vb.y * handleTime, b.z - vb.z * handleTime}, b, parameter);
+    };
+    Point target = interpolate(targets, targetVelocities);
+    if (index == 0) {
+        // The opening looks left enough to include the nearby monument and the flag.
+        const float openingBias = 1.0f - parameter * parameter * (3.0f - 2.0f * parameter);
+        target = {raisedFlagCenter.x - 13.5f * openingBias,
+                  flagHeight(time) + 0.8f,
+                  flagPoleZ + 4.2f * openingBias};
+    }
+    return {interpolate(cameras, cameraVelocities), target, index};
 }
 }
