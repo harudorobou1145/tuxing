@@ -13,6 +13,9 @@ int main() {
     assert(end.x == 3.0f && end.y == 4.5f);
     assert(animation::shot(-1).index == 0);
     assert(animation::shot(35).index == 5);
+    assert(animation::aircraftStart == 18.0f);
+    assert(animation::aircraft(18).x == -92);
+    assert(animation::aircraft(19).x > animation::aircraft(18).x);
     assert(animation::aircraft(26).x == -24);
     assert(std::abs(animation::aircraft(31).x - 46.4f) < 0.001f);
     assert(animation::aircraft(35).z < -1200);
@@ -44,14 +47,18 @@ int main() {
     const auto approachEnd = animation::shot(animation::shotTimes[1]);
     assert(approachStart.camera.x > animation::flagPoleX + 10);
     assert(std::hypot(approachEnd.camera.x - animation::flagPoleX,
-                      approachEnd.camera.z - animation::flagPoleZ) < 7);
+                      approachEnd.camera.z - animation::flagPoleZ) < 8);
     assert(approachEnd.camera.z < approachStart.camera.z);
+    assert(approachEnd.target.y < approachEnd.camera.y);
     const auto beforeTurn = animation::shot(0.1f).camera;
-    const auto afterTurn = animation::shot(animation::shotTimes[1] + 0.1f).camera;
-    assert(std::hypot(afterTurn.x - approachEnd.camera.x, afterTurn.z - approachEnd.camera.z)
-        < 0.4f * std::hypot(beforeTurn.x - approachStart.camera.x, beforeTurn.z - approachStart.camera.z));
-    assert(animation::shot(21).camera.x < animation::shot(12).camera.x);
-    assert(animation::shot(21).camera.z == animation::shot(12).camera.z);
+    assert(std::hypot(beforeTurn.x - approachStart.camera.x, beforeTurn.z - approachStart.camera.z) < 0.8f);
+    const auto armorFront = animation::shot(7.6f);
+    const auto armorPass = animation::shot(9.3f);
+    assert(armorFront.target.x == animation::tankPosition(7.6f, 0));
+    assert(armorFront.target.x < armorFront.camera.x - 6);
+    assert(std::abs(armorFront.camera.z - animation::paradeDepth) < 0.5f);
+    assert(armorPass.camera.x < armorFront.camera.x && armorPass.camera.y < armorFront.camera.y);
+    assert(animation::soldierPosition(0, 24) - 1.0f >= animation::paradeRoadFirst);
     const auto march = animation::shot(animation::shotTimes[2]);
     assert(std::abs(march.target.x - (animation::soldierPosition(animation::shotTimes[2]) - 2)) < 0.01f);
     assert(march.target.z == animation::paradeDepth);

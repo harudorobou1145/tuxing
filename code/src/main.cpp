@@ -213,7 +213,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 12> captureTimes = {0.0f, 2.5f, 8.5f, 16.5f, 23.5f, 24.8f, 26.0f, 27.0f, 28.5f, 33.0f, 34.0f, 35.0f};
+    const std::array<float, 12> captureTimes = {0, 2.5f, animation::shotTimes[1], 7.6f, 9.3f,
+        animation::shotTimes[2], 14.5f, animation::shotTimes[3], animation::aircraftStart, 23, 34, 35};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -315,23 +316,26 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 box(monumentCenter + glm::vec3(side * 2.36f, 0.65f, 0), {0.10f, 0.09f, 4.65f}, {0.87f, 0.86f, 0.81f});
             }
         }
-        box({0, 0.055f, animation::paradeDepth}, {100, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
-        for (int stripe = -12; stripe <= 12; ++stripe)
+        constexpr float roadCenter = (animation::paradeRoadFirst + animation::paradeRoadLast) * 0.5f;
+        constexpr float roadLength = animation::paradeRoadLast - animation::paradeRoadFirst;
+        box({roadCenter, 0.055f, animation::paradeDepth}, {roadLength, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
+        for (int stripe = -34; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         for (int side : {-1, 1}) {
             const float edge = animation::paradeDepth + side * 2.85f;
-            box({0, 0.075f, edge + side * 0.55f}, {100, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
-            for (int section = -49; section <= 49; ++section) {
+            box({roadCenter, 0.075f, edge + side * 0.55f}, {roadLength, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
+            for (int section = static_cast<int>(animation::paradeRoadFirst) + 1;
+                 section < animation::paradeRoadLast; ++section) {
                 const float horizontal = static_cast<float>(section);
                 box({horizontal, 0.13f, edge}, {0.97f, 0.16f, 0.28f},
                     section % 2 == 0 ? glm::vec3(0.71f, 0.73f, 0.70f) : glm::vec3(0.62f, 0.65f, 0.64f));
             }
-            for (int drain = -5; drain <= 5; ++drain) {
+            for (int drain = -10; drain <= 5; ++drain) {
                 for (int slot = 0; slot < 6; ++slot)
                     box({drain * 8.0f + slot * 0.08f, 0.081f, edge - side * 0.22f},
                         {0.035f, 0.012f, 0.18f}, {0.12f, 0.15f, 0.16f});
             }
-            for (int post = -5; post <= 5; ++post) {
+            for (int post = -10; post <= 5; ++post) {
                 const float horizontal = post * 8.0f;
                 box({horizontal, 0.36f, edge + side * 1.2f}, {0.14f, 0.6f, 0.14f}, {0.27f, 0.31f, 0.32f});
                 box({horizontal, 0.60f, edge + side * 1.2f}, {0.16f, 0.07f, 0.16f}, {0.78f, 0.74f, 0.57f});

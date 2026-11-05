@@ -5,18 +5,21 @@
 
 namespace animation {
 constexpr float duration = 35.0f;
-constexpr float aircraftStart = 26.0f;
+constexpr float aircraftStart = 18.0f;
+constexpr float aircraftPass = 26.0f;
 constexpr float aircraftTurn = 31.0f;
-inline constexpr std::array<float, 7> shotTimes{0, 5, 12, 21, aircraftStart, aircraftTurn, duration};
+inline constexpr std::array<float, 7> shotTimes{0, 5.3f, 11.8f, 16, aircraftStart, aircraftTurn, duration};
 constexpr float tankSpeed = 1.25f;
 constexpr float soldierSpeed = 0.65f;
 constexpr float paradeDepth = 12.0f;
+constexpr float paradeRoadFirst = -87.0f;
+constexpr float paradeRoadLast = 50.0f;
 // Source Cylinder's center/base, transformed with the full scene's gateModel.
 constexpr float flagPoleX = -0.4566794f;
 constexpr float flagPoleZ = 25.6760101f;
 constexpr float flagBaseOffset = 0.0731168f;
 inline float tankPosition(float seconds, int index) {
-    return 2.0f + (seconds - 3.0f) * tankSpeed - index * 7.0f;
+    return -12.0f + (seconds - 3.0f) * tankSpeed - index * 7.0f;
 }
 inline float soldierPosition(float seconds, int row = 0) {
     return tankPosition(0, 3) - 8.0f + seconds * soldierSpeed - row * 1.6f;
@@ -72,10 +75,15 @@ struct Shot {
 };
 
 inline Point aircraft(float seconds) {
+    if (seconds < aircraftPass) {
+        // Lead into the original pass at the same position and velocity.
+        return curve({-92, 26, -30}, {-74, 26, -26}, {-54.72f, 29, -21.2f}, {-24, 29, -18},
+                     segment(seconds, aircraftStart, aircraftPass));
+    }
     Point position;
     if (seconds <= aircraftTurn) {
         position = curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
-                     segment(seconds, aircraftStart, aircraftTurn));
+                     segment(seconds, aircraftPass, aircraftTurn));
     } else {
         position = curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
                          segment(seconds, aircraftTurn, duration));
@@ -90,22 +98,27 @@ inline Point aircraft(float seconds) {
 }
 
 inline Shot shot(float seconds) {
-    constexpr std::array<float, 6> cameraTimes{0, 5, 8, 12, 21, aircraftStart};
-    // Approach from the east of the monument, round the flagpole on the east,
-    // then travel west along the plaza side of the parade road.
+    constexpr float armorFront = 7.6f;
+    constexpr float armorPass = 9.3f;
+    constexpr std::array<float, 7> cameraTimes{0, shotTimes[1], armorFront, armorPass,
+        shotTimes[2], shotTimes[3], aircraftStart};
+    // Enter above the lane, then move to its plaza side as the armor passes.
     constexpr float roadSideDepth = 18.2f;
-    const std::array<Point, 6> cameras{{{11, 6.4f, 79},
-        {flagPoleX + 5.1f, 5.8f, flagPoleZ + 2.8f}, {0, 5.4f, roadSideDepth},
-        {-11, 4.9f, roadSideDepth}, {-27, 5.0f, roadSideDepth}, {-33, 5.4f, roadSideDepth}}};
-    const std::array<Point, 6> cameraVelocities{{{-0.5f, -0.05f, -12}, {-1.0f, -0.1f, -1.2f},
-        {-2.5f, -0.15f, 0}, {-2.2f, 0, 0}, {-1.4f, 0.08f, 0}, {-0.65f, 0, 0}}};
-    const Point raisedFlagCenter{flagPoleX + 1.2f, flagHeight(5) + 0.8f, flagPoleZ};
-    const std::array<Point, 6> targets{{raisedFlagCenter, raisedFlagCenter,
-        {tankPosition(8, 1), 1.4f, paradeDepth},
-        {soldierPosition(12) - 2, 1.1f, paradeDepth},
-        {soldierPosition(21) - 2, 1.1f, paradeDepth}, aircraft(aircraftStart)}};
-    const std::array<Point, 6> targetVelocities{{{0, 0, 0}, {0, 0, 0},
-        {-2.5f, 0, 0}, {soldierSpeed, 0, 0}, {soldierSpeed, 0, 0}, {11.52f, 0, 1.2f}}};
+    const std::array<Point, 7> cameras{{{11, 6.4f, 79},
+        {flagPoleX + 5.5f, 5.7f, flagPoleZ + 4.9f}, {3.4f, 4.1f, 12.4f},
+        {1.25f, 3.1f, 15.1f}, {-9, 3.1f, roadSideDepth},
+        {-25, 4.9f, roadSideDepth}, {-30, 5.1f, roadSideDepth}}};
+    const std::array<Point, 7> cameraVelocities{{{-0.5f, -0.05f, -6}, {-0.65f, -0.35f, -7.5f},
+        {-1.1f, -0.55f, 0}, {-2.6f, -0.45f, 2.4f}, {-4.0f, 0.45f, 0},
+        {-3.7f, 0.15f, 0}, {-0.65f, 0, 0}}};
+    const Point flagLook{flagPoleX + 1.2f, 5.25f, flagPoleZ};
+    const std::array<Point, 7> targets{{flagLook, flagLook,
+        {tankPosition(armorFront, 0), 1.4f, paradeDepth},
+        {tankPosition(armorPass, 0), 1.4f, paradeDepth},
+        {soldierPosition(shotTimes[2]) - 2, 1.1f, paradeDepth},
+        {soldierPosition(shotTimes[3]) - 2, 1.1f, paradeDepth}, aircraft(aircraftStart)}};
+    const std::array<Point, 7> targetVelocities{{{0, 0, 0}, {0, 0, 0},
+        {tankSpeed, 0, 0}, {-3.0f, 0, 0}, {soldierSpeed, 0, 0}, {soldierSpeed, 0, 0}, {6.75f, 0, 1.5f}}};
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(
         std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);
@@ -134,8 +147,8 @@ inline Shot shot(float seconds) {
     if (index == 0) {
         // The opening looks left enough to include the nearby monument and the flag.
         const float openingBias = 1.0f - parameter * parameter * (3.0f - 2.0f * parameter);
-        target = {raisedFlagCenter.x - 13.5f * openingBias,
-                  flagHeight(time) + 0.8f,
+        target = {flagLook.x - 13.5f * openingBias,
+                  flagLook.y + (flagHeight(time) + 0.8f - flagLook.y) * openingBias,
                   flagPoleZ + 4.2f * openingBias};
     }
     return {interpolate(cameras, cameraVelocities), target, index};
