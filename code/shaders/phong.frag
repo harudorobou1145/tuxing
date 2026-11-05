@@ -6,6 +6,7 @@ in vec3 localPosition;
 uniform int trackSurface;
 uniform int pavingSurface;
 uniform int roofSurface;
+uniform int architectureSurface;
 uniform int bumpEnabled;
 uniform int unlit;
 uniform float smokeAlpha;
@@ -67,6 +68,28 @@ void main() {
     float shininess = roofSurface == 1 ? 48.0 : pavingSurface == 1 ? 12.0 : 32.0;
     float specular = diffuse > 0.0 ? pow(max(dot(viewDirection, reflected), 0.0), shininess) : 0.0;
     vec3 albedo = texture(diffuseMap, surfaceUV).rgb * tint;
+    if (architectureSurface > 0) {
+        vec2 stoneUV = abs(normal.x) > abs(normal.z) ? worldPosition.zy : worldPosition.xy;
+        vec2 blockUV = stoneUV / vec2(0.85, 0.38);
+        blockUV.x += mod(floor(blockUV.y), 2.0) * 0.5;
+        vec2 edge = min(fract(blockUV), 1.0 - fract(blockUV));
+        vec2 filtering = max(fwidth(blockUV), vec2(0.001));
+        vec2 joints = 1.0 - smoothstep(vec2(0.012), vec2(0.012) + filtering, edge);
+        float grain = sin(stoneUV.x * 83.0) * sin(stoneUV.y * 97.0);
+        grain *= 1.0 - smoothstep(0.01, 0.06, max(fwidth(stoneUV.x), fwidth(stoneUV.y)));
+        albedo = (architectureSurface == 2 ? vec3(0.80, 0.82, 0.79) : vec3(0.73, 0.72, 0.65))
+            * (1.0 - 0.13 * max(joints.x, joints.y) + 0.025 * grain);
+        if (architectureSurface == 1 && abs(normal.y) < 0.3) {
+            vec2 windowUV = stoneUV / vec2(1.45, 1.6);
+            vec2 cell = fract(windowUV);
+            vec2 width = max(fwidth(windowUV), vec2(0.001));
+            vec2 opening = smoothstep(vec2(0.24, 0.22), vec2(0.24, 0.22) + width, cell)
+                * (1.0 - smoothstep(vec2(0.76, 0.82) - width, vec2(0.76, 0.82), cell));
+            float windowMask = opening.x * opening.y * step(0.8, worldPosition.y) * (1.0 - step(3.9, worldPosition.y));
+            vec3 glass = mix(vec3(0.12, 0.18, 0.20), vec3(0.29, 0.39, 0.43), cell.y);
+            albedo = mix(albedo, glass, windowMask);
+        }
+    }
     if (trackSurface == 1) {
         float loop = atan((localPosition.y - 1.35) / 1.35, localPosition.x / 6.2);
         float tread = smoothstep(0.18, 0.28, fract(loop * 12.0 - animationState.x * animationState.z * 12.0 / 6.2));
@@ -113,8 +136,18 @@ void main() {
             haze = max(haze, smoothstep(90.0, 280.0, length(worldPosition.xz - cameraPosition.xz)));
         color = mix(color, texture(skyEnvironmentMap, skyUV).rgb, haze);
     }
-    if (unlit == 1) {
+    if (unlit >= 1) {
         float radial = 1.0 - smoothstep(0.35, 1.0, distance(uv, vec2(0.5)) * 2.0);
+        if (unlit == 3) {
+            float radius = length((uv - 0.5) * 2.0);
+            radial = exp(-radius * radius * 7.0) * (1.0 - smoothstep(0.65, 1.0, radius));
+        }
+        if (unlit == 2) {
+            float density = 0.80 + 0.12 * sin(uv.x * 19.0 + sin(uv.y * 23.0))
+                + 0.08 * sin(uv.y * 37.0 + uv.x * 13.0);
+            radial = exp(-dot((uv - 0.5) * vec2(3.0, 4.0), (uv - 0.5) * vec2(3.0, 4.0)))
+                * (1.0 - smoothstep(0.35, 0.5, max(abs(uv.x - 0.5), abs(uv.y - 0.5)))) * density;
+        }
         fragmentColor = vec4(albedo, smokeAlpha * radial);
     } else {
         fragmentColor = vec4(color, 1.0);

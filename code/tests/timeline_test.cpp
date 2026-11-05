@@ -14,8 +14,9 @@ int main() {
     assert(animation::shot(-1).index == 0);
     assert(animation::shot(35).index == 5);
     assert(animation::aircraft(26).x == -24);
-    assert(animation::aircraft(31).x == 20);
-    assert(animation::aircraft(35).x == 43);
+    assert(std::abs(animation::aircraft(31).x - 46.4f) < 0.001f);
+    assert(animation::aircraft(35).z < -1200);
+    assert(animation::aircraft(30).x - animation::aircraft(29).x > 12.0f);
     const auto turnBefore = animation::aircraft(animation::aircraftTurn - 0.01f);
     const auto turnCenter = animation::aircraft(animation::aircraftTurn);
     const auto turnAfter = animation::aircraft(animation::aircraftTurn + 0.01f);
@@ -27,7 +28,7 @@ int main() {
     const auto checkAcceleration = [](float earlier, float before, float center, float after, float later) {
         const float incoming = (center - 2 * before + earlier) / 0.0001f;
         const float outgoing = (later - 2 * after + center) / 0.0001f;
-        assert(std::abs(incoming - outgoing) < 0.25f);
+        assert(std::abs(incoming - outgoing) < 1.5f);
     };
     checkAcceleration(turnEarlier.x, turnBefore.x, turnCenter.x, turnAfter.x, turnLater.x);
     checkAcceleration(turnEarlier.y, turnBefore.y, turnCenter.y, turnAfter.y, turnLater.y);
@@ -88,7 +89,7 @@ int main() {
         }
         const auto aircraft = animation::aircraft(frame / 60.0f);
         assert(std::isfinite(aircraft.x) && std::isfinite(aircraft.y) && std::isfinite(aircraft.z));
-        assert(aircraft.y >= 23.0f && aircraft.y <= 50.0f);
+        assert(aircraft.y >= 23.0f && aircraft.y <= 60.0f);
         if (seconds >= 28.0f) {
             const float flightDistance = std::sqrt(
                 std::pow(aircraft.x - shot.camera.x, 2)

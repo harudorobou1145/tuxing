@@ -78,7 +78,7 @@ inline Shot shot(float seconds) {
         {3.25f, 5.3f, 9.6f}, {3.7f, 6.7f, 8.8f}, {4.4f, 10, 18.5f}, {2, 12, 55}, {8, 14, 75}}};
     std::array<Point, 9> targets{{{0, 9, -3}, {-4, 6, -3},
         {soldierPosition(shotTimes[2]) - 2, 1.1f, paradeDepth}, {soldierPosition(shotTimes[3]) - 2, 1.1f, paradeDepth},
-        {3.6f, 6.0f, 8}, {3.9f, 7.0f, 7.8f}, {-8, 30, -17}, {20, 33, -24}, {43, 43, -48}}};
+        {3.6f, 6.0f, 8}, {3.9f, 7.0f, 7.8f}, {-8, 30, -17}, {46.4f, 33, -24}, {120, 55, -600}}};
     const auto moveWithFlag = [](Point& point) {
         point.x += flagPoleX - 2.5f;
         point.y += flagBaseOffset;
@@ -122,11 +122,20 @@ inline Shot shot(float seconds) {
 }
 
 inline Point aircraft(float seconds) {
+    Point position;
     if (seconds <= aircraftTurn) {
-        return curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
+        position = curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
                      segment(seconds, aircraftStart, aircraftTurn));
+    } else {
+        position = curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
+                         segment(seconds, aircraftTurn, duration));
     }
-    return curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
-                 segment(seconds, aircraftTurn, duration));
+    position.x = -24.0f + (position.x + 24.0f) * 1.6f;
+    const float departure = segment(seconds, aircraftTurn, duration);
+    const float acceleration = departure * departure * departure;
+    position.x += 55.0f * acceleration;
+    position.y += 15.0f * acceleration;
+    position.z -= 1200.0f * acceleration;
+    return position;
 }
 }
