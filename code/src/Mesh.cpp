@@ -324,6 +324,25 @@ Mesh::Mesh(float halfExtent, int subdivisions) {
     boundsMax = {halfExtent, 0.0f, halfExtent};
     upload(vertices, vertexArray, vertexBuffer, count);
 }
+Mesh::Mesh(float radius, int slices, int stacks) {
+    std::vector<Vertex> vertices;
+    const auto vertex = [&](int slice, int stack) {
+        const float longitude = 6.2831853f * slice / slices;
+        const float latitude = 3.14159265f * stack / stacks;
+        const glm::vec3 normal(std::sin(latitude) * std::cos(longitude), std::cos(latitude),
+            std::sin(latitude) * std::sin(longitude));
+        return Vertex{normal * radius, normal, {static_cast<float>(slice) / slices, static_cast<float>(stack) / stacks}};
+    };
+    for (int stack = 0; stack < stacks; ++stack) {
+        for (int slice = 0; slice < slices; ++slice) {
+            vertices.insert(vertices.end(), {vertex(slice, stack), vertex(slice, stack + 1), vertex(slice + 1, stack + 1),
+                vertex(slice, stack), vertex(slice + 1, stack + 1), vertex(slice + 1, stack)});
+        }
+    }
+    boundsMin = glm::vec3(-radius);
+    boundsMax = glm::vec3(radius);
+    upload(vertices, vertexArray, vertexBuffer, count);
+}
 Mesh::~Mesh() {
     if (!textures.empty()) glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
     glDeleteBuffers(1, &vertexBuffer);

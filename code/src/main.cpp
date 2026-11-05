@@ -62,6 +62,42 @@ public:
     GLuint handle = 0;
 };
 
+class ShadowMap {
+public:
+    static constexpr int resolution = 2048;
+    ShadowMap() {
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, resolution, resolution, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        const float border[] = {1, 1, 1, 1};
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+        glGenFramebuffers(1, &framebuffer);
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texture, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!complete) {
+            glDeleteFramebuffers(1, &framebuffer);
+            glDeleteTextures(1, &texture);
+            throw std::runtime_error("Shadow framebuffer is incomplete");
+        }
+    }
+    ~ShadowMap() {
+        glDeleteFramebuffers(1, &framebuffer);
+        glDeleteTextures(1, &texture);
+    }
+    ShadowMap(const ShadowMap&) = delete;
+    ShadowMap& operator=(const ShadowMap&) = delete;
+    GLuint texture = 0;
+    GLuint framebuffer = 0;
+};
+
 class Sky {
 public:
     explicit Sky(const std::string& root)
@@ -127,6 +163,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     const std::string root = PROJECT_ROOT;
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
     Sky sky(root);
+    ShadowMap shadows;
+    const glm::mat4 lightView = glm::lookAt(glm::vec3(-45, 80, 55), glm::vec3(0, 0, 12), glm::vec3(0, 1, 0));
+    const glm::mat4 lightProjection = glm::ortho(-72.0f, 72.0f, -52.0f, 65.0f, 1.0f, 220.0f);
     std::cout << "Loading OBJ: " << modelPath << std::endl;
     const bool coreScene = modelPath.find("tiananmen_core.obj") != std::string::npos;
     const bool fullScene = coreScene || modelPath.find("tiananmen_balanced.obj") != std::string::npos
@@ -163,6 +202,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh ground(600.0f, 36);
     Mesh flag(2.4f, 1.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
+    Mesh foliage(1.0f, 10, 7);
     Texture white(1);
     Texture paving(root + "/model/tile.jpeg");
     std::cout << "Ready. Space: pause, R: replay, arrows: shots, B: bump toggle, Esc: exit" << std::endl;
@@ -201,21 +241,31 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glfwWaitEventsTimeout(0.05);
             continue;
         }
-        glViewport(0, 0, width, height);
+        for (int renderPass = 0; renderPass < 2; ++renderPass) {
+        const bool depthPass = renderPass == 0;
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, depthPass ? 0 : shadows.texture);
+        glActiveTexture(GL_TEXTURE0);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthPass ? shadows.framebuffer : 0);
+        glViewport(0, 0, depthPass ? ShadowMap::resolution : width, depthPass ? ShadowMap::resolution : height);
         glClearColor(0.46f, 0.70f, 0.88f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClear(depthPass ? GL_DEPTH_BUFFER_BIT : GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         const auto shot = animation::shot(seconds);
         const glm::vec3 camera = vector(shot.camera);
         const glm::vec3 target = vector(shot.target);
         const float aspect = static_cast<float>(width) / height;
         const glm::mat4 view = glm::lookAt(camera, target, glm::vec3(0, 1, 0));
         const glm::mat4 projection = glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f);
-        sky.draw(view, projection);
+        if (!depthPass) sky.draw(view, projection);
         shader.use();
-        shader.matrix("view", view);
-        shader.matrix("projection", projection);
+        shader.matrix("view", depthPass ? lightView : view);
+        shader.matrix("projection", depthPass ? lightProjection : projection);
+        shader.matrix("lightSpace", lightProjection * lightView);
+        shader.integer("depthOnly", depthPass ? 1 : 0);
+        shader.integer("shadowMap", 2);
+        shader.integer("unlit", 0);
         shader.vector("cameraPosition", camera);
-        shader.vector("lightPosition", glm::vec3(-15, 35, 20));
+        shader.vector("lightPosition", glm::normalize(glm::vec3(-45, 80, 43)));
         shader.integer("diffuseMap", 0);
         shader.integer("skyEnvironmentMap", 1);
         shader.integer("bumpEnabled", bump ? 1 : 0);
@@ -243,6 +293,49 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         box({0, 0.055f, animation::paradeDepth}, {100, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
         for (int stripe = -12; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
+        for (int side : {-1, 1}) {
+            const float edge = animation::paradeDepth + side * 2.85f;
+            box({0, 0.075f, edge + side * 0.55f}, {100, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
+            for (int section = -49; section <= 49; ++section) {
+                const float horizontal = static_cast<float>(section);
+                box({horizontal, 0.13f, edge}, {0.97f, 0.16f, 0.28f},
+                    section % 2 == 0 ? glm::vec3(0.71f, 0.73f, 0.70f) : glm::vec3(0.62f, 0.65f, 0.64f));
+            }
+            for (int drain = -5; drain <= 5; ++drain) {
+                for (int slot = 0; slot < 6; ++slot)
+                    box({drain * 8.0f + slot * 0.08f, 0.081f, edge - side * 0.22f},
+                        {0.035f, 0.012f, 0.18f}, {0.12f, 0.15f, 0.16f});
+            }
+            for (int post = -5; post <= 5; ++post) {
+                const float horizontal = post * 8.0f;
+                box({horizontal, 0.36f, edge + side * 1.2f}, {0.14f, 0.6f, 0.14f}, {0.27f, 0.31f, 0.32f});
+                box({horizontal, 0.60f, edge + side * 1.2f}, {0.16f, 0.07f, 0.16f}, {0.78f, 0.74f, 0.57f});
+            }
+        }
+        const auto crown = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
+            shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), position), size));
+            shader.vector("tint", color);
+            foliage.draw();
+        };
+        for (int side : {-1, 1}) {
+            for (int cluster = -3; cluster <= 3; ++cluster) {
+                if (cluster == 0) continue;
+                const float horizontal = cluster * 12.0f;
+                const float depth = animation::paradeDepth + side * 9.0f;
+                box({horizontal, 0.23f, depth}, {4.2f, 0.35f, 2.4f}, {0.62f, 0.65f, 0.62f});
+                box({horizontal, 0.42f, depth}, {3.9f, 0.08f, 2.1f}, {0.22f, 0.24f, 0.16f});
+                box({horizontal, 1.45f, depth}, {0.22f, 2.1f, 0.22f}, {0.30f, 0.25f, 0.19f});
+                crown({horizontal, 3.0f, depth}, {1.35f, 1.65f, 1.25f}, {0.19f, 0.36f, 0.21f});
+                crown({horizontal - 0.8f, 2.7f, depth + 0.15f}, {0.85f, 1.1f, 0.9f}, {0.25f, 0.42f, 0.24f});
+                crown({horizontal + 0.75f, 2.95f, depth - 0.1f}, {0.9f, 1.2f, 0.85f}, {0.22f, 0.39f, 0.25f});
+                for (int shrub : {-1, 1}) {
+                    crown({horizontal + shrub * 1.4f, 0.75f, depth + 0.45f}, {0.55f, 0.42f, 0.55f}, {0.32f, 0.46f, 0.23f});
+                    for (int bloom = 0; bloom < 3; ++bloom)
+                        crown({horizontal + shrub * 1.4f + (bloom - 1) * 0.22f, 1.07f, depth + 0.5f},
+                            {0.12f, 0.09f, 0.12f}, {0.78f, 0.24f + bloom * 0.12f, 0.24f});
+                }
+            }
+        }
         for (std::size_t index = 0; index < tanks.size(); ++index) {
             const float horizontal = animation::tankPosition(seconds, static_cast<int>(index));
             const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
@@ -262,6 +355,22 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             }
         }
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
+        for (int step = 0; step < 3; ++step) {
+            const float width = 2.8f - step * 0.5f;
+            box({animation::flagPoleX, animation::flagBaseOffset + 0.035f + step * 0.055f, animation::flagPoleZ},
+                {width, 0.055f, width}, {0.77f + step * 0.035f, 0.79f + step * 0.03f, 0.76f + step * 0.03f});
+        }
+        for (int seam = -2; seam <= 2; ++seam) {
+            box({animation::flagPoleX + seam * 0.32f, animation::flagBaseOffset + 0.175f, animation::flagPoleZ},
+                {0.009f, 0.004f, 1.75f}, {0.53f, 0.56f, 0.55f});
+            box({animation::flagPoleX, animation::flagBaseOffset + 0.175f, animation::flagPoleZ + seam * 0.32f},
+                {1.75f, 0.004f, 0.009f}, {0.53f, 0.56f, 0.55f});
+        }
+        box({animation::flagPoleX, animation::flagBaseOffset + 0.24f, animation::flagPoleZ},
+            {0.28f, 0.15f, 0.28f}, {0.52f, 0.56f, 0.58f});
+        for (float collar : {0.36f, 1.1f, 6.9f})
+            box({animation::flagPoleX, animation::flagBaseOffset + collar, animation::flagPoleZ},
+                {0.09f, 0.055f, 0.09f}, {0.82f, 0.84f, 0.83f});
         box({animation::flagPoleX, 3.65f + animation::flagBaseOffset, animation::flagPoleZ},
             {0.065f, 7.2f, 0.065f}, {0.7f, 0.72f, 0.75f});
         shader.matrix("model", glm::translate(glm::mat4(1),
@@ -272,7 +381,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(0));
         // Fireworks behind Tiananmen: launch -> rise -> burst, varied rhythm/size.
-        {
+        if (!depthPass) {
             struct Firework {
                 glm::vec3 launch;
                 glm::vec3 peak;
@@ -369,6 +478,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 shader.matrix("model", flight * placement(aircraft, glm::vec3(0), 3.4f));
                 aircraft.draw(shader, white.handle, glm::vec3(0.88f));
             }
+            if (!depthPass) {
             // Colored smoke trails behind each aircraft.
             const std::array<glm::vec3, 5> smokeColors = {
                 glm::vec3(0.85f, 0.10f, 0.10f),
@@ -412,7 +522,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             shader.integer("unlit", 0);
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
+            }
         }
+        }
+        const auto shot = animation::shot(seconds);
         const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast", "Finale"};
         const std::string title = "Parade Animation | " + std::string(names[shot.index]) + " | "
             + std::to_string(seconds).substr(0, 4) + " / "

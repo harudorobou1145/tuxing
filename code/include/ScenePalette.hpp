@@ -5,10 +5,10 @@
 
 namespace palette {
 // RGB components range from 0 to 1. These are base colors before lighting.
-inline const glm::vec3 wallRed{0.65f, 0.12f, 0.09f};
-inline const glm::vec3 roofGold{0.85f, 0.59f, 0.16f};
-inline const glm::vec3 stoneWhite{0.88f, 0.85f, 0.77f};
-inline const glm::vec3 standRed{0.46f, 0.055f, 0.045f};
+inline const glm::vec3 wallRed{0.67f, 0.16f, 0.13f};
+inline const glm::vec3 roofGold{0.88f, 0.65f, 0.25f};
+inline const glm::vec3 stoneWhite{0.86f, 0.87f, 0.83f};
+inline const glm::vec3 standRed{0.52f, 0.105f, 0.085f};
 
 inline glm::vec3 tiananmenColor(const std::string& objectName) {
     if (objectName == "heroes_monument") return stoneWhite;
@@ -24,8 +24,8 @@ inline glm::vec3 tiananmenColor(const std::string& objectName) {
     if (objectName.find("tiananmen_square_Jaune,_toit") == 0) return roofGold;
     if (objectName.find("tiananmen_square_blanc") == 0) return stoneWhite;
     static const std::array<glm::vec3, 4> buildingColors = {
-        glm::vec3(0.48f, 0.29f, 0.23f), glm::vec3(0.68f, 0.53f, 0.32f),
-        glm::vec3(0.30f, 0.46f, 0.45f), glm::vec3(0.39f, 0.48f, 0.60f)};
+        glm::vec3(0.56f, 0.49f, 0.46f), glm::vec3(0.69f, 0.68f, 0.61f),
+        glm::vec3(0.43f, 0.53f, 0.49f), glm::vec3(0.49f, 0.57f, 0.64f)};
     unsigned int colorIndex = 0;
     for (unsigned char character : objectName) {
         colorIndex = colorIndex * 31u + character;

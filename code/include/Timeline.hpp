@@ -73,12 +73,12 @@ struct Shot {
 
 inline Shot shot(float seconds) {
     constexpr std::array<float, 9> cameraTimes{0, 5, 12, 21, 24.8f, 26, 28, 31, duration};
-    std::array<Point, 9> cameras{{{-32, 22, 85}, {-6, 5, 23},
+    std::array<Point, 9> cameras{{{-55, 6, 105}, {-28, 4, 40},
         {soldierPosition(shotTimes[2]) + 6, 2.8f, paradeDepth + 9}, {soldierPosition(shotTimes[3]) + 6, 3.0f, paradeDepth + 10},
-        {3.7f, 5.9f, 9.0f}, {3.7f, 6.5f, 8.65f}, {4, 10, 9}, {9, 18, 22}, {12, 24, 38}}};
-    std::array<Point, 9> targets{{{10, 5, 32}, {0, 3, -3},
+        {3.25f, 5.3f, 9.6f}, {3.7f, 6.7f, 8.8f}, {4.4f, 10, 18.5f}, {2, 12, 55}, {8, 14, 75}}};
+    std::array<Point, 9> targets{{{0, 9, -3}, {-4, 6, -3},
         {soldierPosition(shotTimes[2]) - 2, 1.1f, paradeDepth}, {soldierPosition(shotTimes[3]) - 2, 1.1f, paradeDepth},
-        {3.7f, 6.0f, 8}, {3.7f, 6.5f, 8}, {-6, 25, 1}, {20, 23, -2}, {15, 40, -28}}};
+        {3.6f, 6.0f, 8}, {3.9f, 7.0f, 7.8f}, {-8, 30, -17}, {20, 33, -24}, {43, 43, -48}}};
     const auto moveWithFlag = [](Point& point) {
         point.x += flagPoleX - 2.5f;
         point.y += flagBaseOffset;
@@ -92,11 +92,17 @@ inline Shot shot(float seconds) {
     const int cameraIndex = std::min(static_cast<int>(
         std::upper_bound(cameraTimes.begin(), cameraTimes.end(), time) - cameraTimes.begin()) - 1, 7);
     const float parameter = segment(time, cameraTimes[cameraIndex], cameraTimes[cameraIndex + 1]);
-    const auto interpolate = [&](const auto& points) {
+    const auto interpolate = [&](const auto& points, bool cameraPath) {
         const auto velocity = [&](int key) {
-            if (key == 0 || key == 8) return Point{0, 0, 0};
+            if (key == 0 || key == 8) {
+                const int first = key == 0 ? 0 : 7;
+                const float interval = cameraTimes[first + 1] - cameraTimes[first];
+                return Point{(points[first + 1].x - points[first].x) / interval,
+                             (points[first + 1].y - points[first].y) / interval,
+                             (points[first + 1].z - points[first].z) / interval};
+            }
             if (key == 2 || key == 3) return Point{soldierSpeed, 0, 0};
-            if (key == 4 || key == 5) return Point{0, 0.7f, 0};
+            if (!cameraPath && (key == 4 || key == 5)) return Point{0.15f, 1.2f, -0.2f};
             const float interval = cameraTimes[key + 1] - cameraTimes[key - 1];
             return Point{(points[key + 1].x - points[key - 1].x) / interval,
                          (points[key + 1].y - points[key - 1].y) / interval,
@@ -112,15 +118,15 @@ inline Shot shot(float seconds) {
                      {end.x - endVelocity.x * interval, end.y - endVelocity.y * interval,
                       end.z - endVelocity.z * interval}, end, parameter);
     };
-    return {interpolate(cameras), interpolate(targets), index};
+    return {interpolate(cameras, true), interpolate(targets, false), index};
 }
 
 inline Point aircraft(float seconds) {
     if (seconds <= aircraftTurn) {
-        return curve({-18, 24, -6}, {-8, 26, 0}, {8, 25, 5}, {20, 23, -2},
+        return curve({-24, 29, -18}, {-12, 29, -16}, {7, 30, -18}, {20, 33, -24},
                      segment(seconds, aircraftStart, aircraftTurn));
     }
-    return curve({20, 23, -2}, {20, 28, -10}, {18, 36, -22}, {15, 46, -36},
+    return curve({20, 33, -24}, {30.4f, 35.4f, -28.8f}, {36.96f, 39.08f, -36.16f}, {43, 43, -48},
                  segment(seconds, aircraftTurn, duration));
 }
 }

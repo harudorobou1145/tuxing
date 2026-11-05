@@ -12,6 +12,7 @@ public:
     // Flat XZ plane at y = 0, centred on the origin, normal facing up.
     explicit Mesh(float halfExtent, int subdivisions = 1);
     Mesh(float width, float height, int columns, int rows);
+    Mesh(float radius, int slices, int stacks);
     ~Mesh();
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;
