@@ -347,6 +347,30 @@ Mesh::Mesh(float radius, int slices, int stacks) {
     boundsMax = glm::vec3(radius);
     upload(vertices, vertexArray, vertexBuffer, count);
 }
+Mesh::Mesh(float radius, float height, int slices) {
+    std::vector<Vertex> vertices;
+    const glm::vec3 up(0, 1, 0);
+    for (int slice = 0; slice < slices; ++slice) {
+        const float u = static_cast<float>(slice) / slices;
+        const float nextU = static_cast<float>(slice + 1) / slices;
+        const float angle = 6.2831853f * u;
+        const float nextAngle = 6.2831853f * nextU;
+        const glm::vec3 normal(std::cos(angle), 0, std::sin(angle));
+        const glm::vec3 nextNormal(std::cos(nextAngle), 0, std::sin(nextAngle));
+        const glm::vec3 bottom = normal * radius, nextBottom = nextNormal * radius;
+        const glm::vec3 top = bottom + up * height, nextTop = nextBottom + up * height;
+        const Vertex a{bottom, normal, {u, 0}}, b{top, normal, {u, 1}};
+        const Vertex c{nextBottom, nextNormal, {nextU, 0}}, d{nextTop, nextNormal, {nextU, 1}};
+        vertices.insert(vertices.end(), {a, b, c, c, b, d});
+        const glm::vec2 uv = glm::vec2(normal.x, normal.z) * 0.5f + 0.5f;
+        const glm::vec2 nextUV = glm::vec2(nextNormal.x, nextNormal.z) * 0.5f + 0.5f;
+        vertices.insert(vertices.end(), {{{0, 0, 0}, -up, {0.5f, 0.5f}}, {bottom, -up, uv}, {nextBottom, -up, nextUV},
+            {{0, height, 0}, up, {0.5f, 0.5f}}, {nextTop, up, nextUV}, {top, up, uv}});
+    }
+    boundsMin = {-radius, 0, -radius};
+    boundsMax = {radius, height, radius};
+    upload(vertices, vertexArray, vertexBuffer, count);
+}
 Mesh::~Mesh() {
     if (!textures.empty()) glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
     glDeleteBuffers(1, &vertexBuffer);

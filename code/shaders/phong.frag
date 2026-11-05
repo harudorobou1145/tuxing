@@ -9,11 +9,14 @@ uniform int roofSurface;
 uniform int architectureSurface;
 uniform int bumpEnabled;
 uniform int unlit;
+uniform int metalSurface;
 uniform float smokeAlpha;
 uniform vec3 animationState;
 uniform sampler2D diffuseMap;
 uniform sampler2D skyEnvironmentMap;
+uniform samplerCube reflectionMap;
 uniform sampler2D shadowMap;
+uniform int receiveShadows;
 uniform mat4 lightSpace;
 uniform int depthOnly;
 uniform vec3 lightPosition;
@@ -21,6 +24,13 @@ uniform vec3 cameraPosition;
 uniform vec3 tint;
 uniform vec3 surfaceState;
 out vec4 fragmentColor;
+vec3 skyColor(vec3 direction) {
+    const float pi = 3.14159265359;
+    vec2 skyUV = vec2(atan(direction.z, direction.x) / (2.0 * pi) + 0.5,
+                      asin(clamp(direction.y, -1.0, 1.0)) / pi + 0.5);
+    return texture(skyEnvironmentMap, skyUV).rgb;
+}
+
 float star(vec2 point, vec2 center, float radius, float rotation) {
     vec2 offset = point - center;
     float sector = 3.14159265 / 5.0;
@@ -31,6 +41,18 @@ float star(vec2 point, vec2 center, float radius, float rotation) {
 void main() {
     if (depthOnly == 1) {
         fragmentColor = vec4(1.0);
+        return;
+    }
+    if (metalSurface != 0) {
+        vec3 view = normalize(cameraPosition - worldPosition);
+        vec3 direction = reflect(-view, normalize(worldNormal));
+        vec3 environment;
+        if (metalSurface == 2) {
+            environment = texture(reflectionMap, direction).rgb;
+        } else {
+            environment = mix(vec3(0.24, 0.25, 0.25), skyColor(direction), smoothstep(-0.18, 0.08, direction.y));
+        }
+        fragmentColor = vec4(environment * vec3(0.94, 0.96, 0.98) + vec3(0.025), 1.0);
         return;
     }
     // World-space tiling keeps the exported plaza and generated ground consistent.
@@ -54,7 +76,7 @@ void main() {
     vec4 lightClip = lightSpace * vec4(worldPosition, 1.0);
     vec3 shadowPosition = lightClip.xyz / lightClip.w * 0.5 + 0.5;
     float shadow = 0.0;
-    if (all(greaterThan(shadowPosition, vec3(0.0))) && all(lessThan(shadowPosition, vec3(1.0)))) {
+    if (receiveShadows == 1 && all(greaterThan(shadowPosition, vec3(0.0))) && all(lessThan(shadowPosition, vec3(1.0)))) {
         float bias = max(0.0012 * (1.0 - diffuse), 0.0003);
         vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
         for (int offsetY = -1; offsetY <= 1; ++offsetY) {
@@ -126,15 +148,12 @@ void main() {
     }
     if (unlit == 0) {
         vec3 direction = normalize(worldPosition - cameraPosition);
-        const float pi = 3.14159265359;
-        vec2 skyUV = vec2(atan(direction.z, direction.x) / (2.0 * pi) + 0.5,
-                          asin(clamp(direction.y, -1.0, 1.0)) / pi + 0.5);
         float distanceToCamera = length(worldPosition - cameraPosition);
         float opticalDepth = max(distanceToCamera - 38.0, 0.0) * 0.0028;
         float haze = 1.0 - exp(-opticalDepth);
         if (pavingSurface == 1)
             haze = max(haze, smoothstep(90.0, 280.0, length(worldPosition.xz - cameraPosition.xz)));
-        color = mix(color, texture(skyEnvironmentMap, skyUV).rgb, haze);
+        color = mix(color, skyColor(direction), haze);
     }
     if (unlit >= 1) {
         float radial = 1.0 - smoothstep(0.35, 1.0, distance(uv, vec2(0.5)) * 2.0);

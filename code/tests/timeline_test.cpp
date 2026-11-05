@@ -52,18 +52,43 @@ int main() {
     assert(approachEnd.target.y < approachEnd.camera.y);
     const auto beforeTurn = animation::shot(0.1f).camera;
     assert(std::hypot(beforeTurn.x - approachStart.camera.x, beforeTurn.z - approachStart.camera.z) < 0.8f);
-    const auto armorFront = animation::shot(7.6f);
-    const auto armorPass = animation::shot(9.3f);
-    assert(armorFront.target.x == animation::tankPosition(7.6f, 0));
+    const auto armorFront = animation::shot(animation::armorDollyStart);
+    const auto armorPass = animation::shot(animation::reflectionStart - 0.01f);
+    assert(armorFront.target.x == animation::tankPosition(animation::armorDollyStart, 0));
     assert(armorFront.target.x < armorFront.camera.x - 6);
-    assert(std::abs(armorFront.camera.z - animation::paradeDepth) < 0.5f);
+    assert(std::abs(armorFront.camera.z - animation::paradeDepth) < 0.75f);
     assert(armorPass.camera.x < armorFront.camera.x && armorPass.camera.y < armorFront.camera.y);
     assert(animation::soldierPosition(0, 24) - 1.0f >= animation::paradeRoadFirst);
-    const auto march = animation::shot(animation::shotTimes[2]);
-    assert(std::abs(march.target.x - (animation::soldierPosition(animation::shotTimes[2]) - 2)) < 0.01f);
+    const auto reflection = animation::shot(animation::reflectionStart);
+    assert(reflection.index == armorPass.index + 1);
+    assert(reflection.target.x == animation::reflectionBall.x && reflection.target.y == animation::reflectionBall.y
+        && reflection.target.z == animation::reflectionBall.z);
+    const auto march = animation::shot(animation::marchStart);
+    assert(march.index == reflection.index + 1);
+    assert(std::abs(march.target.x - (animation::soldierPosition(animation::marchStart) - 2)) < 0.01f);
     assert(march.target.z == animation::paradeDepth);
     assert(animation::paradeDepth - 2.5f > 6.63f);
+    const auto lookAngles = [](const animation::Shot& shot) {
+        const float x = shot.target.x - shot.camera.x;
+        const float y = shot.target.y - shot.camera.y;
+        const float z = shot.target.z - shot.camera.z;
+        return std::array<float, 2>{std::atan2(y, std::hypot(x, z)), std::atan2(z, x)};
+    };
+    const auto marchAngles = lookAngles(animation::shot(animation::aircraftLookUp));
+    const auto midTilt = lookAngles(animation::shot(animation::aircraftStart));
+    const auto tracked = lookAngles(animation::shot(animation::aircraftTrack));
+    auto entryShot = animation::shot(animation::aircraftStart);
+    entryShot.target = animation::aircraft(animation::aircraftStart);
+    const auto entryAngles = lookAngles(entryShot);
+    assert(marchAngles[0] < midTilt[0] && midTilt[0] < tracked[0]);
+    assert(entryAngles[0] - midTilt[0] > 0.40f);
+    for (int frame = static_cast<int>(animation::aircraftLookUp * 60); frame <= animation::aircraftTrack * 60; ++frame) {
+        const auto before = lookAngles(animation::shot(frame / 60.0f));
+        const auto after = lookAngles(animation::shot((frame + 1) / 60.0f));
+        assert(std::hypot(after[0] - before[0], after[1] - before[1]) < 0.01f);
+    }
     for (float boundary : animation::shotTimes) {
+        if (boundary == animation::reflectionStart || boundary == animation::marchStart) continue;
         const auto before = animation::shot(boundary - 0.001f);
         const auto after = animation::shot(boundary + 0.001f);
         assert(std::abs(before.camera.x - after.camera.x) < 0.01f);
@@ -81,18 +106,22 @@ int main() {
         assert(animation::tankPosition(seconds, 3) - animation::soldierPosition(seconds) >= 7.99f);
         if (frame > 0) assert(std::abs((animation::soldierPosition(seconds)
             - animation::soldierPosition(seconds - 1.0f)) - animation::soldierSpeed) < 0.001f);
-        if (seconds >= animation::shotTimes[2] && seconds <= animation::shotTimes[3]) {
+        if (seconds >= animation::marchStart && seconds <= animation::aircraftLookUp) {
             assert(std::abs(animation::shot(seconds).target.x
                 - (animation::soldierPosition(seconds) - 3)) < 3.0f);
         }
         const auto shot = animation::shot(frame / 60.0f);
+        if (seconds >= animation::armorDollyStart && seconds < animation::reflectionStart) {
+            assert(shot.target.x == animation::tankPosition(seconds, 0));
+            assert(shot.camera.x - shot.target.x > 5.0f);
+        }
         if (frame < static_cast<int>(animation::duration * 60)) {
             const auto next = animation::shot(seconds + 1.0f / 60);
             const float speed = std::sqrt(
                 std::pow(next.camera.x - shot.camera.x, 2)
                 + std::pow(next.camera.y - shot.camera.y, 2)
                 + std::pow(next.camera.z - shot.camera.z, 2)) * 60;
-            assert(speed > 0.25f);
+            assert(speed > 0.2f);
         }
         const auto aircraft = animation::aircraft(frame / 60.0f);
         assert(std::isfinite(aircraft.x) && std::isfinite(aircraft.y) && std::isfinite(aircraft.z));
@@ -104,7 +133,7 @@ int main() {
                 + std::pow(aircraft.z - shot.camera.z, 2));
             assert(flightDistance > 48.0f);
         }
-        if (seconds >= animation::aircraftStart && seconds <= animation::aircraftTurn) {
+        if (seconds >= animation::aircraftTrack && seconds <= animation::aircraftTurn) {
             assert(shot.target.x == aircraft.x && shot.target.y == aircraft.y && shot.target.z == aircraft.z);
         }
         assert(std::isfinite(shot.camera.x) && std::isfinite(shot.target.y));

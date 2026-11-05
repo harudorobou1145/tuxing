@@ -13,6 +13,8 @@ public:
     explicit Mesh(float halfExtent, int subdivisions = 1);
     Mesh(float width, float height, int columns, int rows);
     Mesh(float radius, int slices, int stacks);
+    // Upright cylinder with its base at y = 0.
+    Mesh(float radius, float height, int slices);
     ~Mesh();
     Mesh(const Mesh&) = delete;
     Mesh& operator=(const Mesh&) = delete;

@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <memory>
+#include <random>
 #include <vector>
 #include <filesystem>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -98,6 +99,74 @@ public:
     GLuint framebuffer = 0;
 };
 
+class ReflectionMap {
+public:
+    static constexpr int resolution = 256;
+    static constexpr int faceCount = 6;
+    ReflectionMap() {
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+        for (int face = 0; face < faceCount; ++face) {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_RGB8,
+                resolution, resolution, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        }
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+        glGenRenderbuffers(faceCount, depth.data());
+        for (const GLuint buffer : depth) {
+            glBindRenderbuffer(GL_RENDERBUFFER, buffer);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, resolution, resolution);
+        }
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+        glGenFramebuffers(1, &framebuffer);
+        bindFace(0);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (!complete) {
+            release();
+            throw std::runtime_error("Reflection framebuffer is incomplete");
+        }
+    }
+    ~ReflectionMap() { release(); }
+    ReflectionMap(const ReflectionMap&) = delete;
+    ReflectionMap& operator=(const ReflectionMap&) = delete;
+
+    void bindFace(int face, GLenum target = GL_FRAMEBUFFER) const {
+        glBindFramebuffer(target, framebuffer);
+        glFramebufferTexture2D(target, GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture, 0);
+        glFramebufferRenderbuffer(target, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth[face]);
+    }
+    void copyFace(const ReflectionMap& background, int face) const {
+        background.bindFace(face, GL_READ_FRAMEBUFFER);
+        bindFace(face, GL_DRAW_FRAMEBUFFER);
+        glBlitFramebuffer(0, 0, resolution, resolution, 0, 0, resolution, resolution,
+            GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    }
+    static glm::mat4 faceView(glm::vec3 center, int face) {
+        constexpr std::array<glm::vec3, faceCount> directions{{
+            {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}};
+        constexpr std::array<glm::vec3, faceCount> up{{
+            {0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}}};
+        return glm::lookAt(center, center + directions[face], up[face]);
+    }
+
+    GLuint texture = 0;
+private:
+    void release() {
+        glDeleteFramebuffers(1, &framebuffer);
+        glDeleteRenderbuffers(faceCount, depth.data());
+        glDeleteTextures(1, &texture);
+    }
+    GLuint framebuffer = 0;
+    std::array<GLuint, faceCount> depth{};
+};
+
 class Sky {
 public:
     explicit Sky(const std::string& root)
@@ -159,11 +228,91 @@ glm::vec3 aircraftPosition(float t, int wing) {
     return point - std::abs(wing) * 2.5f * forward + wing * 2.2f * right;
 }
 
+constexpr float balloonRelease = animation::aircraftTurn + 1.25f;
+constexpr float verticalFov = glm::radians(44.0f);
+constexpr int balloonColumns = 14;
+constexpr int balloonsPerColumn = 6;
+
+struct Balloon {
+    float across;
+    float depth;
+    glm::vec3 color;
+    float radius;
+    float speed;
+    float phase;
+};
+
+using Balloons = std::array<Balloon, balloonColumns * balloonsPerColumn>;
+
+Balloons makeBalloons() {
+    constexpr std::array<glm::vec3, 6> colors{{{0.96f, 0.12f, 0.16f}, {1.0f, 0.71f, 0.10f},
+        {0.17f, 0.62f, 0.97f}, {0.22f, 0.82f, 0.47f}, {0.93f, 0.48f, 0.73f}, {0.96f, 0.95f, 0.89f}}};
+    std::mt19937 random(73);
+    std::uniform_real_distribution<float> unit(0.0f, 1.0f);
+    Balloons balloons;
+    for (std::size_t index = 0; index < balloons.size(); ++index) {
+        const auto column = index / balloonsPerColumn;
+        const auto speedBand = index % balloonsPerColumn;
+        const float depth = 8.0f + 2.4f * unit(random);
+        const float across = 1.84f * (column + 0.12f + 0.76f * unit(random)) / balloonColumns - 0.92f;
+        const float speed = 0.13f + 0.18f * (speedBand + unit(random)) / balloonsPerColumn;
+        balloons[index] = {
+            across, depth, colors[static_cast<std::size_t>(random()) % colors.size()],
+            depth * (0.009f + 0.005f * unit(random)), depth * speed, 6.2831853f * unit(random),
+        };
+    }
+    return balloons;
+}
+
+void drawBalloons(const Balloons& balloons, float seconds, float aspect, const Mesh& sphere,
+                  const Shader& shader, GLuint texture) {
+    // Anchor the spread to the late finale framing. The low, close launch line sits below the picture.
+    const auto framing = animation::shot(animation::duration - 0.75f);
+    const glm::vec3 eye = vector(framing.camera);
+    glm::vec3 forward = vector(framing.target) - eye;
+    forward.y = 0.0f;
+    forward = glm::normalize(forward);
+    const glm::vec3 right = glm::cross(forward, glm::vec3(0, 1, 0));
+    const float halfWidth = std::tan(verticalFov * 0.5f) * aspect;
+    const float age = seconds - balloonRelease;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    // The existing procedural sphere is wound clockwise when viewed from outside.
+    glFrontFace(GL_CW);
+    for (const auto& balloon : balloons) {
+        const float phase = age * 2.2f + balloon.phase;
+        glm::vec3 position = eye + forward * balloon.depth
+            + right * (balloon.across * balloon.depth * halfWidth + age * 0.09f * std::sin(phase));
+        position.y = 0.65f + balloon.speed * age;
+        const glm::mat4 pose = glm::rotate(glm::translate(glm::mat4(1), position),
+            0.16f * std::sin(phase), glm::vec3(0, 0, 1));
+        const float radius = balloon.radius;
+        shader.vector("tint", balloon.color);
+        shader.matrix("model", glm::scale(pose, radius * glm::vec3(1.0f, 1.25f, 1.0f)));
+        sphere.draw();
+
+        const glm::mat4 knot = glm::translate(pose, glm::vec3(0, -1.28f * radius, 0));
+        shader.matrix("model", glm::scale(knot, radius * glm::vec3(0.12f, 0.15f, 0.12f)));
+        sphere.draw();
+
+        const float halfString = 1.1f * radius;
+        const glm::mat4 stringPose = glm::rotate(knot, 0.24f * std::sin(phase - 0.8f), glm::vec3(0, 0, 1));
+        shader.vector("tint", glm::vec3(0.62f, 0.60f, 0.56f));
+        shader.matrix("model", glm::scale(glm::translate(stringPose, glm::vec3(0, -halfString, 0)),
+            glm::vec3(0.009f, halfString, 0.009f)));
+        sphere.draw();
+    }
+    glFrontFace(GL_CCW);
+}
+
 void run(GLFWwindow* window, const std::string& modelPath, const std::string& captureDirectory) {
     const std::string root = PROJECT_ROOT;
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
     Sky sky(root);
     ShadowMap shadows;
+    ReflectionMap reflectionBackground;
+    ReflectionMap reflectionMap;
+    const glm::vec3 reflectionCenter = vector(animation::reflectionBall);
+    const glm::mat4 reflectionProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1800.0f);
     const glm::mat4 lightView = glm::lookAt(glm::vec3(-45, 80, 55), glm::vec3(0, 0, 12), glm::vec3(0, 1, 0));
     const glm::mat4 lightProjection = glm::ortho(-72.0f, 72.0f, -52.0f, 65.0f, 1.0f, 220.0f);
     std::cout << "Loading OBJ: " << modelPath << std::endl;
@@ -203,18 +352,37 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh flag(2.4f, 1.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
+    Mesh balloonSphere(1.0f, 18, 12);
+    Mesh metalSphere(1.0f, 40, 28);
+    Mesh postCylinder(1.0f, 1.0f, 32);
+    const auto balloons = makeBalloons();
     Texture white(1);
     Texture paving(root + "/model/tile.jpeg");
+    const auto box = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
+        const glm::vec3 extent = cube.maximum() - cube.minimum();
+        glm::mat4 transform = glm::translate(glm::mat4(1), position);
+        transform = glm::scale(transform, size / extent);
+        transform = glm::translate(transform, -(cube.maximum() + cube.minimum()) * 0.5f);
+        shader.matrix("model", transform);
+        glBindTexture(GL_TEXTURE_2D, white.handle);
+        shader.vector("tint", color);
+        cube.draw();
+    };
     std::cout << "Ready. Space: pause, R: replay, arrows: shots, B: bump toggle, Esc: exit" << std::endl;
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, white.handle);
+    glActiveTexture(GL_TEXTURE0);
     double previous = glfwGetTime();
     float seconds = 0.0f;
     bool paused = false;
     bool previousSpace = false;
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
-    const std::array<float, 12> captureTimes = {0, 2.5f, animation::shotTimes[1], 7.6f, 9.3f,
-        animation::shotTimes[2], 14.5f, animation::shotTimes[3], animation::aircraftStart, 23, 34, 35};
+    bool reflectionBackgroundReady = false;
+    const std::array<float, 15> captureTimes = {0, 2.5f, animation::approachEnd, 7, 10.9f,
+        animation::reflectionStart, 12.5f, 14.5f, animation::marchStart, 17.5f, 18.8f, 23, 33, 34, 35};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -232,7 +400,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const bool right = glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS;
         const bool toggleBump = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
         if (left && !previousLeft) seconds = animation::shotTimes[std::max(0, animation::shot(seconds).index - 1)];
-        if (right && !previousRight) seconds = animation::shotTimes[std::min(5, animation::shot(seconds).index + 1)];
+        if (right && !previousRight) seconds = animation::shotTimes[std::min(
+            static_cast<int>(animation::shotTimes.size()) - 2, animation::shot(seconds).index + 1)];
         if (toggleBump && !previousBump) bump = !bump;
         previousLeft = left; previousRight = right; previousBump = toggleBump;
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -242,36 +411,69 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glfwWaitEventsTimeout(0.05);
             continue;
         }
-        for (int renderPass = 0; renderPass < 2; ++renderPass) {
-        const bool depthPass = renderPass == 0;
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, depthPass ? 0 : shadows.texture);
-        glActiveTexture(GL_TEXTURE0);
-        glBindFramebuffer(GL_FRAMEBUFFER, depthPass ? shadows.framebuffer : 0);
-        glViewport(0, 0, depthPass ? ShadowMap::resolution : width, depthPass ? ShadowMap::resolution : height);
-        glClearColor(0.46f, 0.70f, 0.88f, 1.0f);
-        glClear(depthPass ? GL_DEPTH_BUFFER_BIT : GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         const auto shot = animation::shot(seconds);
-        const glm::vec3 camera = vector(shot.camera);
-        const glm::vec3 target = vector(shot.target);
+        const bool reflectionShot = seconds >= animation::reflectionStart && seconds < animation::marchStart;
+        const int backgroundPasses = reflectionBackgroundReady ? 0 : ReflectionMap::faceCount;
+        const int reflectionPasses = reflectionShot ? ReflectionMap::faceCount : 0;
         const float aspect = static_cast<float>(width) / height;
-        const glm::mat4 view = glm::lookAt(camera, target, glm::vec3(0, 1, 0));
-        const glm::mat4 projection = glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f);
-        if (!depthPass) sky.draw(view, projection);
+        for (int renderPass = 0; renderPass < 2 + backgroundPasses + reflectionPasses; ++renderPass) {
+        const bool depthPass = renderPass == 0;
+        const bool backgroundPass = renderPass > 0 && renderPass <= backgroundPasses;
+        const bool movingReflectionPass = renderPass > backgroundPasses && renderPass <= backgroundPasses + reflectionPasses;
+        const bool reflectionPass = backgroundPass || movingReflectionPass;
+        const int face = backgroundPass ? renderPass - 1 : renderPass - backgroundPasses - 1;
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, depthPass ? white.handle : shadows.texture);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, movingReflectionPass ? reflectionBackground.texture : reflectionMap.texture);
+        glActiveTexture(GL_TEXTURE0);
+        if (reflectionPass) {
+            if (backgroundPass) reflectionBackground.bindFace(face);
+            else reflectionMap.copyFace(reflectionBackground, face);
+            glViewport(0, 0, ReflectionMap::resolution, ReflectionMap::resolution);
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, depthPass ? shadows.framebuffer : 0);
+            glViewport(0, 0, depthPass ? ShadowMap::resolution : width, depthPass ? ShadowMap::resolution : height);
+        }
+        glClearColor(0.46f, 0.70f, 0.88f, 1.0f);
+        if (!movingReflectionPass) glClear(depthPass ? GL_DEPTH_BUFFER_BIT : GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        const glm::vec3 camera = reflectionPass ? reflectionCenter : vector(shot.camera);
+        const glm::vec3 target = vector(shot.target);
+        const glm::mat4 view = reflectionPass ? ReflectionMap::faceView(camera, face)
+            : glm::lookAt(camera, target, glm::vec3(0, 1, 0));
+        const glm::mat4 projection = reflectionPass ? reflectionProjection
+            : glm::perspective(reflectionShot ? glm::radians(35.0f) : verticalFov, aspect, 0.1f, 1800.0f);
+        if (!depthPass && !movingReflectionPass) sky.draw(view, projection);
         shader.use();
         shader.matrix("view", depthPass ? lightView : view);
         shader.matrix("projection", depthPass ? lightProjection : projection);
         shader.matrix("lightSpace", lightProjection * lightView);
         shader.integer("depthOnly", depthPass ? 1 : 0);
         shader.integer("shadowMap", 2);
+        shader.integer("receiveShadows", backgroundPass ? 0 : 1);
         shader.integer("unlit", 0);
+        shader.integer("metalSurface", 0);
+        shader.integer("reflectionMap", 3);
         shader.vector("cameraPosition", camera);
         shader.vector("lightPosition", glm::normalize(glm::vec3(-45, 80, 43)));
         shader.integer("diffuseMap", 0);
         shader.integer("skyEnvironmentMap", 1);
-        shader.integer("bumpEnabled", bump ? 1 : 0);
+        shader.integer("bumpEnabled", bump && !backgroundPass ? 1 : 0);
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
-        shader.vector("surfaceState", glm::vec3(bump ? 1 : 0, 0, 0));
+        shader.vector("surfaceState", glm::vec3(0));
+        if (!backgroundPass) {
+            for (std::size_t index = 0; index < tanks.size(); ++index) {
+                const float horizontal = animation::tankPosition(seconds, static_cast<int>(index));
+                const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
+                const float localSpeed = animation::tankSpeed * std::max({extent.x, extent.y, extent.z}) / 6.0f;
+                shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
+                shader.matrix("model", placement(*tanks[index], {horizontal, 0.08f, animation::paradeDepth}, 6.0f, glm::radians(180.0f)));
+                tanks[index]->draw(shader, white.handle, glm::vec3(1));
+            }
+            shader.vector("animationState", glm::vec3(seconds, 0, 0));
+        }
+        if (movingReflectionPass) continue;
+        shader.vector("surfaceState", glm::vec3(bump && !backgroundPass ? 1 : 0, 0, 0));
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
         ground.draw(shader, paving.handle, glm::vec3(0.92f), paving.handle);
         shader.vector("surfaceState", glm::vec3(0));
@@ -281,16 +483,6 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             shader.matrix("model", monumentModel);
             monument->draw(shader, white.handle, glm::vec3(1));
         }
-        const auto box = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
-            const glm::vec3 extent = cube.maximum() - cube.minimum();
-            glm::mat4 transform = glm::translate(glm::mat4(1), position);
-            transform = glm::scale(transform, size / extent);
-            transform = glm::translate(transform, -(cube.maximum() + cube.minimum()) * 0.5f);
-            shader.matrix("model", transform);
-            glBindTexture(GL_TEXTURE_2D, white.handle);
-            shader.vector("tint", color);
-            cube.draw();
-        };
         if (fullScene) {
             const float sceneScale = 18.0f / 7877.01f;
             const auto sourceBox = [&](glm::vec3 center, glm::vec3 size, glm::vec3 color) {
@@ -321,6 +513,12 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         box({roadCenter, 0.055f, animation::paradeDepth}, {roadLength, 0.02f, 5.0f}, {0.23f, 0.25f, 0.27f});
         for (int stripe = -34; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
+        const auto postSection = [&](glm::vec3 base, float radius, float height, glm::vec3 color) {
+            shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), base), {radius, height, radius}));
+            glBindTexture(GL_TEXTURE_2D, white.handle);
+            shader.vector("tint", color);
+            postCylinder.draw();
+        };
         for (int side : {-1, 1}) {
             const float edge = animation::paradeDepth + side * 2.85f;
             box({roadCenter, 0.075f, edge + side * 0.55f}, {roadLength, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
@@ -337,8 +535,25 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             }
             for (int post = -10; post <= 5; ++post) {
                 const float horizontal = post * 8.0f;
-                box({horizontal, 0.36f, edge + side * 1.2f}, {0.14f, 0.6f, 0.14f}, {0.27f, 0.31f, 0.32f});
-                box({horizontal, 0.60f, edge + side * 1.2f}, {0.16f, 0.07f, 0.16f}, {0.78f, 0.74f, 0.57f});
+                const float depth = animation::paradeDepth + side * animation::roadPostOffset;
+                const glm::vec3 center(horizontal, animation::reflectionBall.y, depth);
+                const bool reflectionPost = center == reflectionCenter;
+                if (backgroundPass && reflectionPost) continue;
+                postSection({horizontal, 0.055f, depth}, 0.18f, 0.08f, {0.29f, 0.32f, 0.33f});
+                postSection({horizontal, 0.10f, depth}, 0.145f, 0.60f, {0.27f, 0.31f, 0.32f});
+                constexpr float capBase = 0.69f;
+                postSection({horizontal, capBase, depth}, 0.165f, animation::roadPostCapTop - capBase,
+                    {0.78f, 0.74f, 0.57f});
+                // Avoid capturing the reflecting objects inside their own environment map.
+                if (!reflectionPass) {
+                    const bool useProbe = reflectionShot && reflectionPost;
+                    shader.integer("metalSurface", useProbe ? 2 : 1);
+                    shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(animation::roadBallRadius)));
+                    glFrontFace(GL_CW);
+                    metalSphere.draw();
+                    glFrontFace(GL_CCW);
+                    shader.integer("metalSurface", 0);
+                }
             }
         }
         const auto crown = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
@@ -365,15 +580,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 }
             }
         }
-        for (std::size_t index = 0; index < tanks.size(); ++index) {
-            const float horizontal = animation::tankPosition(seconds, static_cast<int>(index));
-            const auto extent = tanks[index]->maximum() - tanks[index]->minimum();
-            const float localSpeed = animation::tankSpeed * std::max({extent.x, extent.y, extent.z}) / 6.0f;
-            shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
-            shader.matrix("model", placement(*tanks[index], {horizontal, 0.08f, animation::paradeDepth}, 6.0f, glm::radians(180.0f)));
-            tanks[index]->draw(shader, white.handle, glm::vec3(1));
-        }
-        shader.vector("animationState", glm::vec3(seconds, 0, 0));
+        if (backgroundPass) continue;
         for (int row = 0; row < 25; ++row) {
             for (int column = 0; column < 4; ++column) {
                 const float horizontal = animation::soldierPosition(seconds, row);
@@ -409,6 +616,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         flag.draw(shader, white.handle, glm::vec3(1));
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
         shader.vector("surfaceState", glm::vec3(0));
+        if (!depthPass && seconds >= balloonRelease)
+            drawBalloons(balloons, seconds, aspect, balloonSphere, shader, white.handle);
         // Fireworks behind Tiananmen: launch -> rise -> burst, varied rhythm/size.
         if (!depthPass) {
             struct Firework {
@@ -586,8 +795,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             }
         }
         }
-        const auto shot = animation::shot(seconds);
-        const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast", "Finale"};
+        const char* names[] = {"Approach", "Armor", "Reflection", "March", "Flypast", "Finale"};
         const std::string title = "Parade Animation | " + std::string(names[shot.index]) + " | "
             + std::to_string(seconds).substr(0, 4) + " / "
             + std::to_string(static_cast<int>(animation::duration)) + " s" + (paused ? " | Paused" : "");
@@ -603,6 +811,10 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             if (++captureIndex == captureTimes.size()) glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
         glfwSwapBuffers(window);
+        if (!reflectionBackgroundReady) {
+            reflectionBackgroundReady = true;
+            previous = glfwGetTime();
+        }
     }
 }
 }
