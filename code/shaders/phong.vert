@@ -55,14 +55,17 @@ void main() {
     if (animationState.y > 0.5) {
         float time = animationState.x;
         float gust = 0.78 + 0.16 * sin(time * 1.3) + 0.06 * sin(time * 3.7);
-        float phase = position.x * 4.5 - time * 4.0 + position.y * 2.0;
-        float ripple = position.x * 13.0 - time * 8.5 + position.y * 5.0;
-        float flutter = position.x * 23.0 - time * 13.0 - position.y * 7.0;
+        // Frequencies are tuned for the full-size flag (14.4 x 9.6). Keeping
+        // the old small-flag rates produced ~10 ripples across the cloth and a
+        // near-horizontal surface normal, which read as a broken flag.
+        float phase = position.x * 0.75 - time * 4.0 + position.y * 0.33;
+        float ripple = position.x * 2.17 - time * 8.5 + position.y * 0.83;
+        float flutter = position.x * 3.83 - time * 13.0 - position.y * 1.17;
         float wave = 0.13 * sin(phase) + 0.025 * sin(ripple) + 0.009 * sin(flutter);
-        float slopeX = gust * (wave + position.x * (0.585 * cos(phase)
-            + 0.325 * cos(ripple) + 0.207 * cos(flutter)));
-        float slopeY = gust * position.x * (0.26 * cos(phase)
-            + 0.125 * cos(ripple) - 0.063 * cos(flutter));
+        float slopeX = gust * (wave + position.x * (0.0975 * cos(phase)
+            + 0.0543 * cos(ripple) + 0.0345 * cos(flutter)));
+        float slopeY = gust * position.x * (0.0429 * cos(phase)
+            + 0.0208 * cos(ripple) - 0.0105 * cos(flutter));
         position.z += gust * position.x * wave;
         normal = normalize(vec3(-slopeX, -slopeY, 1.0));
     }
