@@ -4,9 +4,13 @@
 
 int main() {
     assert(animation::progress(-1.0f) == 0.0f);
-    assert(animation::duration == 35.0f);
-    assert(animation::progress(17.5f) == 0.5f);
-    assert(animation::progress(35.0f) == 1.0f);
+    assert(animation::duration == 44.0f);
+    assert(animation::progress(22.0f) == 0.5f);
+    assert(animation::progress(44.0f) == 1.0f);
+    assert(animation::finaleFade(41) == 0);
+    assert(animation::finaleFade(42.5f) == 0.5f);
+    assert(animation::finaleFade(44) == 1);
+    assert(animation::shot(40).camera.y > animation::shot(35).camera.y);
     const auto start = animation::bezier(0.0f);
     const auto end = animation::bezier(1.0f);
     assert(start.x == -3.0f && start.y == 1.5f);
@@ -20,7 +24,7 @@ int main() {
     assert(std::abs(animation::aircraft(31).x - 278.4f) < 0.001f);
     assert(animation::aircraft(35).z < -200.0f);
     assert(animation::aircraft(30).x - animation::aircraft(29).x > 72.0f);
-    const auto finale = animation::shot(animation::duration);
+    const auto finale = animation::shot(animation::flightEnd);
     assert(finale.target.x == 720 && finale.target.y == 330 && finale.target.z == -3600);
     const auto turnBefore = animation::aircraft(animation::aircraftTurn - 0.01f);
     const auto turnCenter = animation::aircraft(animation::aircraftTurn);

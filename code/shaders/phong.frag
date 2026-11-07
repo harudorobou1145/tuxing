@@ -39,8 +39,15 @@ float star(vec2 point, vec2 center, float radius, float rotation) {
     return 1.0 - smoothstep(edge - 0.004, edge + 0.004, length(offset));
 }
 void main() {
+    if (pavingSurface == 1 && worldPosition.x > -582.0 && worldPosition.x < 360.0
+        && worldPosition.z > 48.0 && worldPosition.z < 96.0)
+        discard;
     if (depthOnly == 1) {
         fragmentColor = vec4(1.0);
+        return;
+    }
+    if (unlit == 4) {
+        fragmentColor = vec4(0.0, 0.0, 0.0, smokeAlpha);
         return;
     }
     if (metalSurface != 0) {
@@ -149,10 +156,10 @@ void main() {
     if (unlit == 0) {
         vec3 direction = normalize(worldPosition - cameraPosition);
         float distanceToCamera = length(worldPosition - cameraPosition);
-        float opticalDepth = max(distanceToCamera - 38.0, 0.0) * 0.0028;
+        float opticalDepth = max(distanceToCamera - 228.0, 0.0) * 0.00047;
         float haze = 1.0 - exp(-opticalDepth);
         if (pavingSurface == 1)
-            haze = max(haze, smoothstep(90.0, 280.0, length(worldPosition.xz - cameraPosition.xz)));
+            haze = min(haze, 0.55);
         color = mix(color, skyColor(direction), haze);
     }
     if (unlit >= 1) {

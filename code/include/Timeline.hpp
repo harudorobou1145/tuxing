@@ -4,7 +4,12 @@
 #include <array>
 
 namespace animation {
-constexpr float duration = 35.0f;
+constexpr float duration = 44.0f;
+constexpr float flightEnd = 35.0f;
+inline float finaleFade(float seconds) {
+    const float parameter = std::clamp((seconds - 41.0f) / 3.0f, 0.0f, 1.0f);
+    return parameter * parameter * (3.0f - 2.0f * parameter);
+}
 constexpr float aircraftStart = 18.0f;
 constexpr float aircraftPass = 26.0f;
 constexpr float aircraftTurn = 31.0f;
@@ -91,7 +96,7 @@ inline Point aircraft(float seconds) {
                      segment(seconds, aircraftPass, aircraftTurn));
     } else {
         position = curve({120, 198, -144}, {182.4f, 212.4f, -172.8f}, {221.76f, 234.48f, -216.96f}, {258, 258, -288},
-                         segment(seconds, aircraftTurn, duration));
+                         segment(seconds, aircraftTurn, flightEnd));
     }
     position.x = -144.0f + (position.x + 144.0f) * 1.6f;
     return position;
@@ -127,9 +132,14 @@ inline Shot shot(float seconds) {
         Point camera = cameras.back();
         camera.x += cameraVelocities.back().x * (time - aircraftStart);
         // Follow the flypast, then ease toward the established finale framing.
-        const float departure = segment(time, aircraftTurn, duration);
+        const float departure = segment(time, aircraftTurn, flightEnd);
         const float settle = departure * departure * (3.0f - 2.0f * departure);
-        const Point target = mix(aircraft(time), {720, 330, -3600}, settle);
+        Point target = mix(aircraft(time), {720, 330, -3600}, settle);
+        const float finaleAge = std::max(time - flightEnd, 0.0f);
+        camera.y += 0.16f * finaleAge * finaleAge;
+        const float focus = 1.0f / (1.0f + 0.4f * finaleAge * finaleAge);
+        if (finaleAge > 0.0f) target = mix(camera, target, focus);
+        target.y += 2.0f * finaleAge * finaleAge;
         return {camera, target, index};
     }
     const auto key = static_cast<std::size_t>(

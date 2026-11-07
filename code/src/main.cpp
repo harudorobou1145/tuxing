@@ -266,14 +266,14 @@ Balloons makeBalloons() {
 void drawBalloons(const Balloons& balloons, float seconds, float aspect, const Mesh& sphere,
                   const Shader& shader, GLuint texture) {
     // Anchor the spread to the late finale framing. The low, close launch line sits below the picture.
-    const auto framing = animation::shot(animation::duration - 0.75f);
+    const auto framing = animation::shot(animation::flightEnd - 0.75f);
     const glm::vec3 eye = vector(framing.camera);
     glm::vec3 forward = vector(framing.target) - eye;
     forward.y = 0.0f;
     forward = glm::normalize(forward);
     const glm::vec3 right = glm::cross(forward, glm::vec3(0, 1, 0));
     const float halfWidth = std::tan(verticalFov * 0.5f) * aspect;
-    const float age = seconds - balloonRelease;
+    const float age = (seconds - balloonRelease) * 0.28f;
     glBindTexture(GL_TEXTURE_2D, texture);
     // The existing procedural sphere is wound clockwise when viewed from outside.
     glFrontFace(GL_CW);
@@ -311,7 +311,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     ShadowMap shadows;
     ReflectionMap reflectionMap;
     const glm::vec3 reflectionCenter = vector(animation::reflectionBall);
-    const glm::mat4 reflectionProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1800.0f);
+    const glm::mat4 reflectionProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 24000.0f);
     const glm::mat4 lightView = glm::lookAt(glm::vec3(-45, 80, 55), glm::vec3(0, 0, animation::paradeDepth), glm::vec3(0, 1, 0));
     const glm::mat4 lightProjection = glm::ortho(-72.0f, 72.0f, -52.0f, 65.0f, 1.0f, 220.0f);
     std::cout << "Loading OBJ: " << modelPath << std::endl;
@@ -359,7 +359,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh aircraft(root + "/model/j20/j-20_stealth_fighter_aircraft.obj");
     Mesh soldier(root + "/model/solider/source/\xe6\x9c\xaa\xe5\x91\xbd\xe5\x90\x8d.obj");
     Mesh cube(root + "/model/demo/cube.obj");
-    Mesh ground(2000.0f, 36);
+    Mesh ground(12000.0f, 64);
     Mesh flag(14.4f, 9.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
@@ -379,8 +379,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
     bool reflectionBackgroundReady = false;
-    const std::array<float, 12> captureTimes = {0, 2.5f, animation::shotTimes[1], 7.6f, 9.3f,
-        animation::shotTimes[2], 14.5f, animation::shotTimes[3], animation::aircraftStart, 23, 34, 35};
+    const std::array<float, 16> captureTimes = {0, 2.5f, animation::shotTimes[1], 7.6f, 9.3f,
+        animation::shotTimes[2], 14.5f, animation::shotTimes[3], animation::aircraftStart, 23, 34, 35,
+        38, 41, 42.5f, 44};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -434,7 +435,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const glm::mat4 view = backgroundPass ? ReflectionMap::faceView(camera, face)
             : glm::lookAt(camera, target, glm::vec3(0, 1, 0));
         const glm::mat4 projection = backgroundPass ? reflectionProjection
-            : glm::perspective(glm::radians(44.0f), aspect, 0.1f, 1800.0f);
+            : glm::perspective(glm::radians(44.0f), aspect, 0.1f, 24000.0f);
         if (!depthPass && !backgroundPass) sky.draw(view, projection);
         shader.use();
         shader.matrix("view", depthPass ? lightView : view);
@@ -504,9 +505,12 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         }
         constexpr float roadCenter = (animation::paradeRoadFirst + animation::paradeRoadLast) * 0.5f;
         constexpr float roadLength = animation::paradeRoadLast - animation::paradeRoadFirst;
-        box({roadCenter, 0.055f, animation::paradeDepth}, {roadLength, 0.02f, 48.0f}, {0.23f, 0.25f, 0.27f});
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(-8.0f, -8.0f);
+        box({roadCenter, 0.08f, animation::paradeDepth}, {roadLength + 120.0f, 0.08f, 48.0f}, {0.23f, 0.25f, 0.27f});
+        glDisable(GL_POLYGON_OFFSET_FILL);
         for (int stripe = -34; stripe <= 12; ++stripe)
-            box({stripe * 2.5f, 0.075f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
+            box({stripe * 2.5f, 0.13f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         const auto postSection = [&](glm::vec3 base, float radius, float height, glm::vec3 color) {
             shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), base), {radius, height, radius}));
             glBindTexture(GL_TEXTURE_2D, white.handle);
@@ -661,14 +665,24 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             const glm::vec3 fwForward = glm::normalize(target - camera);
             const glm::vec3 fwRight = glm::normalize(glm::cross(fwForward, glm::vec3(0, 1, 0)));
             const glm::vec3 fwUp = glm::cross(fwRight, fwForward);
+            const auto finaleFraming = animation::shot(animation::flightEnd - 0.75f);
+            const glm::vec3 finaleEye = vector(finaleFraming.camera);
+            glm::vec3 finaleForward = vector(finaleFraming.target) - finaleEye;
+            finaleForward.y = 0;
+            finaleForward = glm::normalize(finaleForward);
+            const glm::vec3 finaleRight = glm::cross(finaleForward, glm::vec3(0, 1, 0));
+            const float finaleBlend = glm::smoothstep(balloonRelease - 2.0f, balloonRelease, seconds);
             const auto puff = [&](const glm::vec3& pos, float size, const glm::vec3& color, float alpha) {
                 shader.vector("tint", color);
                 shader.floating("smokeAlpha", alpha);
                 glm::mat4 b(1.0f);
-                b[0] = glm::vec4(fwRight * size, 0.0f);
-                b[1] = glm::vec4(fwUp * size, 0.0f);
+                b[0] = glm::vec4(fwRight * size * 6.0f, 0.0f);
+                b[1] = glm::vec4(fwUp * size * 6.0f, 0.0f);
                 b[2] = glm::vec4(fwForward, 0.0f);
-                b[3] = glm::vec4(pos, 1.0f);
+                const glm::vec3 finalePosition = finaleEye + finaleForward * (210.0f - pos.z * 0.25f)
+                    + finaleRight * (pos.x * 1.5f)
+                    + glm::vec3(0, pos.y + 32.0f + 25.0f * std::max(seconds - animation::flightEnd, 0.0f), 0);
+                b[3] = glm::vec4(glm::mix(pos, finalePosition, finaleBlend), 1.0f);
                 b = glm::translate(b, glm::vec3(-0.5f, -0.5f, 0.0f));
                 shader.matrix("model", b);
                 smokeQuad.draw();
@@ -696,7 +710,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 } else {
                     const float burst = fw.period - fw.rise;
                     const float age = t - fw.rise;
-                    const int particles = fw.streaks * 3;
+                    const int particles = fw.streaks * 4;
                     for (int particle = 0; particle < particles; ++particle) {
                         const float seed = 0.5f + 0.5f * std::sin(particle * 127.1f + fw.offset * 311.7f);
                         const float lifetime = burst * (0.65f + 0.35f * seed);
@@ -705,20 +719,23 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                         const float horizontal = std::sqrt(std::max(0.0f, 1.0f - vertical * vertical));
                         const float angle = particle * 2.399963f + fw.offset;
                         const glm::vec3 direction(horizontal * std::cos(angle), vertical, horizontal * std::sin(angle));
-                        const glm::vec3 velocity = direction * (fw.radius * (0.85f + 0.3f * seed));
+                        const bool innerShell = particle % 4 == 0;
+                        const glm::vec3 velocity = direction * (fw.radius * (0.85f + 0.3f * seed)
+                            * (innerShell ? 0.58f : 1.0f));
                         const auto trajectory = [&](float elapsed) {
                             return fw.peak + velocity * ((1.0f - std::exp(-1.15f * elapsed)) / 1.15f)
-                                + glm::vec3(0.12f * elapsed, -1.3f * elapsed * elapsed, 0);
+                                + glm::vec3(0.72f * elapsed, -7.8f * elapsed * elapsed, 0);
                         };
                         const float remaining = 1.0f - age / lifetime;
                         const float flicker = 0.85f + 0.15f * std::sin(age * 35.0f + particle * 2.7f);
                         const float alpha = std::pow(remaining, 0.7f) * flicker;
-                        const glm::vec3 color = glm::mix(glm::vec3(1.0f, 0.48f, 0.12f), fw.color, remaining);
-                        for (int sample = 9; sample >= 1; --sample) {
-                            const float history = age - sample * 0.018f;
+                        const glm::vec3 shellColor = innerShell ? glm::vec3(1.0f, 0.82f, 0.42f) : fw.color;
+                        const glm::vec3 color = glm::mix(glm::vec3(1.0f, 0.48f, 0.12f), shellColor, remaining);
+                        for (int sample = 14; sample >= 1; --sample) {
+                            const float history = age - sample * 0.014f;
                             if (history < 0.0f) continue;
-                            const float fade = 1.0f - sample / 10.0f;
-                            puff(trajectory(history), 0.08f + 0.09f * fade, color, alpha * fade * 0.45f);
+                            const float fade = 1.0f - sample / 15.0f;
+                            puff(trajectory(history), 0.04f + 0.07f * fade, color, alpha * fade * 0.28f);
                         }
                         const glm::vec3 position = trajectory(age);
                         puff(position, 0.48f, color, alpha * 0.12f);
@@ -814,6 +831,26 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glDisable(GL_BLEND);
             }
         }
+        }
+        const float fade = animation::finaleFade(seconds);
+        if (fade > 0.0f) {
+            glDisable(GL_DEPTH_TEST);
+            glDepthMask(GL_FALSE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            shader.matrix("view", glm::mat4(1));
+            shader.matrix("projection", glm::mat4(1));
+            shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), glm::vec3(-1, -1, 0)), glm::vec3(2, 2, 1)));
+            shader.integer("unlit", 4);
+            shader.vector("tint", glm::vec3(0));
+            shader.floating("smokeAlpha", fade);
+            glBindTexture(GL_TEXTURE_2D, white.handle);
+            smokeQuad.draw();
+            shader.integer("unlit", 0);
+            shader.floating("smokeAlpha", 1);
+            glDisable(GL_BLEND);
+            glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
         }
         const auto shot = animation::shot(seconds);
         const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast", "Finale"};
