@@ -203,7 +203,7 @@ inline Shot shot(float seconds) {
     }
     constexpr float roadTurn = 6.9f;
     constexpr float armorFront = 7.6f;
-    const auto armorLook = [](float t) { return Point{-37.5f - 1.5f * (t - armorFront), 1.4f, paradeDepth + 9}; };
+    const auto armorLook = [&](float t) { return Point{-37.5f - 1.5f * (t - armorFront), 1.4f, paradeDepth + 9}; };
     const std::array<float, 5> times{{0, shotTimes[1], roadTurn, armorFront, reflectionStart}};
     const std::array<Point, 5> cameras{{{66, 38, 474},
         {flagPoleX + 33, 34.2f, flagPoleZ + 29.4f}, {3, 16, 108},

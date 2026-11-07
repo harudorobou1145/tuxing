@@ -379,6 +379,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh flag(14.4f, 9.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
+    Mesh treeMesh(root + "/model/tree/tree.obj");
     Mesh balloonSphere(1.0f, 18, 12);
     Mesh metalSphere(1.0f, 40, 28);
     Mesh postCylinder(1.0f, 1.0f, 32);
@@ -633,12 +634,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 const float size = 0.60f + 0.07f * (0.5f + 0.5f * std::sin(cluster * 2.37f + side));
                 box({horizontal, 0.20f, depth}, {2.8f, 0.30f, 1.8f}, {0.62f, 0.65f, 0.62f});
                 box({horizontal, 0.37f, depth}, {2.55f, 0.06f, 1.55f}, {0.22f, 0.24f, 0.16f});
-                // Both cylinders start in the soil; the old box trunk began 1 metre above it.
-                postSection({horizontal, 0.38f, depth}, 0.34f, 0.25f, {0.30f, 0.25f, 0.19f});
-                postSection({horizontal, 0.38f, depth}, 0.32f * size, 7.1f * size, {0.30f, 0.25f, 0.19f});
-                crown({horizontal, 9.1f * size, depth}, size * glm::vec3(3.9f, 4.6f, 3.9f), {0.19f, 0.36f, 0.21f});
-                crown({horizontal - 1.6f * size, 8.2f * size, depth + 0.3f}, size * glm::vec3(2.7f, 3.3f, 2.9f), {0.25f, 0.42f, 0.24f});
-                crown({horizontal + 1.5f * size, 8.9f * size, depth - 0.3f}, size * glm::vec3(2.8f, 3.6f, 2.6f), {0.22f, 0.39f, 0.25f});
+                // Real tree model (trunk + branches + leaves), base planted in the planter.
+                shader.matrix("model", placement(treeMesh, {horizontal, 0.35f, depth}, 11.4f * size));
+                treeMesh.draw(shader, white.handle, glm::vec3(1));
                 for (int shrub : {-1, 1}) {
                     crown({horizontal + shrub * 0.9f, 0.60f, depth + 0.3f}, {0.36f, 0.28f, 0.36f}, {0.32f, 0.46f, 0.23f});
                     for (int bloom = 0; bloom < 3; ++bloom)
