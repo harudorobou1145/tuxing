@@ -5,6 +5,10 @@ in vec2 uv;
 in vec3 localPosition;
 uniform int trackSurface;
 uniform int pavingSurface;
+uniform vec3 paradeRoadCenter;
+uniform vec3 paradeRoadSize;
+uniform float sourceRoadPadding;
+uniform int asphaltSurface;
 uniform int roofSurface;
 uniform int architectureSurface;
 uniform int bumpEnabled;
@@ -20,6 +24,7 @@ uniform int receiveShadows;
 uniform mat4 lightSpace;
 uniform int depthOnly;
 uniform vec3 lightPosition;
+uniform float lightingSceneScale;
 uniform vec3 cameraPosition;
 uniform vec3 tint;
 uniform vec3 surfaceState;
@@ -39,8 +44,9 @@ float star(vec2 point, vec2 center, float radius, float rotation) {
     return 1.0 - smoothstep(edge - 0.004, edge + 0.004, length(offset));
 }
 void main() {
-    if (pavingSurface == 1 && worldPosition.x > -582.0 && worldPosition.x < 360.0
-        && worldPosition.z > 48.0 && worldPosition.z < 96.0)
+    // Clear the uneven imported terrain beneath the road and its flat shoulders.
+    if (pavingSurface == 1 && all(lessThan(abs(worldPosition.xz - paradeRoadCenter.xz),
+        paradeRoadSize.xz * 0.5 + vec2(0.0, sourceRoadPadding))))
         discard;
     if (depthOnly == 1) {
         fragmentColor = vec4(1.0);
@@ -64,10 +70,12 @@ void main() {
     }
     // World-space tiling keeps the exported plaza and generated ground consistent.
     vec2 surfaceUV = pavingSurface == 1 ? worldPosition.xz / 1.6 : uv;
+    // One asphalt repeat spans 4.8 x 3 metres, matching road.jpg's aspect ratio.
+    if (asphaltSurface == 1) surfaceUV = worldPosition.xz / vec2(4.8, 3.0);
     // Source model units per texture repeat. Larger values produce larger roof tiles.
     if (roofSurface == 1) surfaceUV = uv / 650.0;
     vec3 normal = normalize(worldNormal);
-    if (surfaceState.x > 0.5 || (pavingSurface == 1 && bumpEnabled == 1)) {
+    if (surfaceState.x > 0.5 || ((pavingSurface == 1 || asphaltSurface == 1) && bumpEnabled == 1)) {
         vec3 positionX = dFdx(worldPosition), positionY = dFdy(worldPosition);
         vec3 crossX = cross(positionY, normal), crossY = cross(normal, positionX);
         float determinant = dot(positionX, crossX);
@@ -84,17 +92,28 @@ void main() {
     vec3 shadowPosition = lightClip.xyz / lightClip.w * 0.5 + 0.5;
     float shadow = 0.0;
     if (receiveShadows == 1 && all(greaterThan(shadowPosition, vec3(0.0))) && all(lessThan(shadowPosition, vec3(1.0)))) {
-        float bias = max(0.0012 * (1.0 - diffuse), 0.0003);
         vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
+        float bias = max(0.0012 * (1.0 - diffuse), 0.0003) / lightingSceneScale;
+        // Compare neighboring samples against the receiver's plane, avoiding self-shadow stripes.
+        vec3 shadowX = dFdx(shadowPosition), shadowY = dFdy(shadowPosition);
+        float determinant = shadowX.x * shadowY.y - shadowX.y * shadowY.x;
+        vec2 depthGradient = vec2(0.0);
+        if (abs(determinant) > 1e-12) {
+            depthGradient = vec2(shadowX.z * shadowY.y - shadowY.z * shadowX.y,
+                                 shadowY.z * shadowX.x - shadowX.z * shadowY.x) / determinant;
+        }
+        vec2 sampleCenter = (floor(shadowPosition.xy / texel) + 0.5) * texel;
         for (int offsetY = -1; offsetY <= 1; ++offsetY) {
             for (int offsetX = -1; offsetX <= 1; ++offsetX) {
-                float storedDepth = texture(shadowMap, shadowPosition.xy + vec2(offsetX, offsetY) * texel).r;
-                shadow += shadowPosition.z - bias > storedDepth ? 1.0 / 9.0 : 0.0;
+                vec2 sampleUV = sampleCenter + vec2(offsetX, offsetY) * texel;
+                float storedDepth = texture(shadowMap, sampleUV).r;
+                float receiverDepth = shadowPosition.z + dot(depthGradient, sampleUV - shadowPosition.xy);
+                shadow += receiverDepth - bias > storedDepth ? 1.0 / 9.0 : 0.0;
             }
         }
     }
     float visibility = 1.0 - shadow * 0.78;
-    float shininess = roofSurface == 1 ? 48.0 : pavingSurface == 1 ? 12.0 : 32.0;
+    float shininess = roofSurface == 1 ? 48.0 : (pavingSurface == 1 || asphaltSurface == 1) ? 12.0 : 32.0;
     float specular = diffuse > 0.0 ? pow(max(dot(viewDirection, reflected), 0.0), shininess) : 0.0;
     vec3 albedo = texture(diffuseMap, surfaceUV).rgb * tint;
     if (architectureSurface > 0) {
@@ -137,7 +156,7 @@ void main() {
     }
     float skyExposure = normal.y * 0.5 + 0.5;
     vec3 ambientLight = mix(vec3(0.21, 0.205, 0.19), vec3(0.32, 0.36, 0.41), skyExposure);
-    float highlightStrength = roofSurface == 1 ? 0.24 : pavingSurface == 1 ? 0.035 : 0.12;
+    float highlightStrength = roofSurface == 1 ? 0.24 : (pavingSurface == 1 || asphaltSurface == 1) ? 0.035 : 0.12;
     if (trackSurface == 1) highlightStrength = 0.045;
     vec3 color = albedo * (ambientLight + vec3(0.79, 0.76, 0.70) * diffuse * visibility)
         + vec3(1.0, 0.96, 0.86) * highlightStrength * specular * visibility;
@@ -155,11 +174,13 @@ void main() {
     }
     if (unlit == 0) {
         vec3 direction = normalize(worldPosition - cameraPosition);
-        float distanceToCamera = length(worldPosition - cameraPosition);
-        float opticalDepth = max(distanceToCamera - 228.0, 0.0) * 0.00047;
+        // Keep main's atmospheric falloff in the enlarged scene's coordinate system.
+        float distanceToCamera = length(worldPosition - cameraPosition) / lightingSceneScale;
+        float opticalDepth = max(distanceToCamera - 38.0, 0.0) * 0.0028;
         float haze = 1.0 - exp(-opticalDepth);
         if (pavingSurface == 1)
-            haze = min(haze, 0.55);
+            haze = max(haze, smoothstep(90.0, 280.0,
+                length(worldPosition.xz - cameraPosition.xz) / lightingSceneScale));
         color = mix(color, skyColor(direction), haze);
     }
     if (unlit >= 1) {

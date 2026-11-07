@@ -66,7 +66,7 @@ bool isFence(const std::string& name) {
 }
 }
 
-Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument) {
+Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsideWallOffset) {
     tinyobj::ObjReader reader;
     tinyobj::ObjReaderConfig config;
     config.triangulate = true;
@@ -136,7 +136,8 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument) {
                 throw std::runtime_error("OBJ has invalid position index");
             }
             const auto position = static_cast<std::size_t>(index.vertex_index) * 3;
-            const glm::vec3 point{attributes.vertices[position], attributes.vertices[position + 1], attributes.vertices[position + 2]};
+            glm::vec3 point{attributes.vertices[position], attributes.vertices[position + 1], attributes.vertices[position + 2]};
+            if (tiananmen && shape.name == "Cube.2") point.z += roadsideWallOffset;
             if (firstPosition) {
                 boundsMin = point;
                 boundsMax = point;
@@ -234,6 +235,8 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument) {
                 }
                 const auto position = static_cast<std::size_t>(index.vertex_index) * 3;
                 triangle[corner].position = {attributes.vertices[position], attributes.vertices[position + 1], attributes.vertices[position + 2]};
+                // Move only the long roadside wall, leaving the gate and grandstands in place.
+                if (tiananmen && shape.name == "Cube.2") triangle[corner].position.z += roadsideWallOffset;
                 if (index.normal_index >= 0) {
                     const auto normal = static_cast<std::size_t>(index.normal_index) * 3;
                     if (normal + 2 >= attributes.normals.size()) throw std::runtime_error("OBJ has invalid normal index");

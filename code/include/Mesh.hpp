@@ -8,7 +8,7 @@ class Shader;
 
 class Mesh {
 public:
-    explicit Mesh(const std::string& objPath, bool excludeSourceMonument = false);
+    explicit Mesh(const std::string& objPath, bool excludeSourceMonument = false, float roadsideWallOffset = 0.0f);
     // Flat XZ plane at y = 0, centred on the origin, normal facing up.
     explicit Mesh(float halfExtent, int subdivisions = 1);
     Mesh(float width, float height, int columns, int rows);

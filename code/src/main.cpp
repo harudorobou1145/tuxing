@@ -70,7 +70,7 @@ public:
 
 class ShadowMap {
 public:
-    static constexpr int resolution = 2048;
+    static constexpr int resolution = 4096;
     ShadowMap() {
         glGenTextures(1, &texture);
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -106,7 +106,7 @@ public:
 
 class ReflectionMap {
 public:
-    static constexpr int resolution = 256;
+    static constexpr int resolution = 512;
     static constexpr int faceCount = 6;
     ReflectionMap() {
         glGenTextures(1, &texture);
@@ -146,6 +146,12 @@ public:
         glFramebufferTexture2D(target, GL_COLOR_ATTACHMENT0,
             GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture, 0);
         glFramebufferRenderbuffer(target, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth[face]);
+    }
+    void copyFace(const ReflectionMap& background, int face) const {
+        background.bindFace(face, GL_READ_FRAMEBUFFER);
+        bindFace(face, GL_DRAW_FRAMEBUFFER);
+        glBlitFramebuffer(0, 0, resolution, resolution, 0, 0, resolution, resolution,
+            GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
     }
     static glm::mat4 faceView(glm::vec3 center, int face) {
         constexpr std::array<glm::vec3, faceCount> directions{{
@@ -227,7 +233,7 @@ glm::vec3 aircraftPosition(float t, int wing) {
     return point - std::abs(wing) * 12.0f * forward + wing * 10.0f * right;
 }
 
-constexpr float balloonRelease = animation::aircraftTurn + 1.25f;
+constexpr float balloonRelease = animation::balloonRelease;
 constexpr float verticalFov = glm::radians(44.0f);
 constexpr int balloonColumns = 14;
 constexpr int balloonsPerColumn = 6;
@@ -252,7 +258,7 @@ Balloons makeBalloons() {
     for (std::size_t index = 0; index < balloons.size(); ++index) {
         const auto column = index / balloonsPerColumn;
         const auto speedBand = index % balloonsPerColumn;
-        const float depth = 48.0f + 14.4f * unit(random);
+        const float depth = animation::balloonDepthMin + animation::balloonDepthRange * unit(random);
         const float across = 1.84f * (column + 0.12f + 0.76f * unit(random)) / balloonColumns - 0.92f;
         const float speed = 0.45f + 0.55f * (speedBand + unit(random)) / balloonsPerColumn;
         balloons[index] = {
@@ -265,15 +271,15 @@ Balloons makeBalloons() {
 
 void drawBalloons(const Balloons& balloons, float seconds, float aspect, const Mesh& sphere,
                   const Shader& shader, GLuint texture) {
-    // Anchor the spread to the late finale framing. The low, close launch line sits below the picture.
-    const auto framing = animation::shot(animation::flightEnd - 0.75f);
+    // Fix the launch area ahead of the 29-second view, rather than attaching it to the camera.
+    const auto framing = animation::shot(balloonRelease);
     const glm::vec3 eye = vector(framing.camera);
     glm::vec3 forward = vector(framing.target) - eye;
     forward.y = 0.0f;
     forward = glm::normalize(forward);
     const glm::vec3 right = glm::cross(forward, glm::vec3(0, 1, 0));
     const float halfWidth = std::tan(verticalFov * 0.5f) * aspect;
-    const float age = (seconds - balloonRelease) * 0.28f;
+    const float age = (seconds - balloonRelease) * animation::balloonRiseScale;
     glBindTexture(GL_TEXTURE_2D, texture);
     // The existing procedural sphere is wound clockwise when viewed from outside.
     glFrontFace(GL_CW);
@@ -282,7 +288,8 @@ void drawBalloons(const Balloons& balloons, float seconds, float aspect, const M
         glm::vec3 position = eye + forward * balloon.depth
             + right * (balloon.across * balloon.depth * halfWidth + 1.1f * age * std::sin(phase))
             + glm::vec3(0, 0, 0.35f * age * std::cos(age * 0.8f + balloon.phase));
-        position.y = 3.9f + balloon.speed * age + 0.5f * std::sin(age * 1.1f + balloon.phase * 2.0f);
+        position.y = animation::balloonLaunchHeight(balloon.depth, balloon.radius)
+            + balloon.speed * age + 0.5f * std::sin(age * 1.1f + balloon.phase * 2.0f);
         const glm::mat4 pose = glm::rotate(glm::translate(glm::mat4(1), position),
             0.16f * std::sin(phase), glm::vec3(0, 0, 1));
         const float radius = balloon.radius;
@@ -309,16 +316,24 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Shader shader(root + "/code/shaders/phong.vert", root + "/code/shaders/phong.frag");
     Sky sky(root);
     ShadowMap shadows;
+    ReflectionMap reflectionBackground;
     ReflectionMap reflectionMap;
     const glm::vec3 reflectionCenter = vector(animation::reflectionBall);
     const glm::mat4 reflectionProjection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 24000.0f);
-    const glm::mat4 lightView = glm::lookAt(glm::vec3(-45, 80, 55), glm::vec3(0, 0, animation::paradeDepth), glm::vec3(0, 1, 0));
-    const glm::mat4 lightProjection = glm::ortho(-72.0f, 72.0f, -52.0f, 65.0f, 1.0f, 220.0f);
+    constexpr float lightingSceneScale = 6.0f;
+    const glm::vec3 sunlight(-45, 80, 43);
+    const glm::vec3 shadowCenter(0, 0, animation::paradeDepth);
+    const glm::mat4 lightView = glm::lookAt(shadowCenter + sunlight * lightingSceneScale, shadowCenter, glm::vec3(0, 1, 0));
+    const glm::mat4 lightProjection = glm::ortho(-72.0f * lightingSceneScale, 72.0f * lightingSceneScale,
+        -52.0f * lightingSceneScale, 65.0f * lightingSceneScale, lightingSceneScale, 220.0f * lightingSceneScale);
+    constexpr float roadLength = animation::paradeRoadLast - animation::paradeRoadFirst;
+    const glm::vec3 roadCenter((animation::paradeRoadFirst + animation::paradeRoadLast) * 0.5f, 0.08f, animation::paradeDepth);
+    const glm::vec3 roadSize(roadLength + 120.0f, 0.08f, animation::paradeRoadWidth);
     std::cout << "Loading OBJ: " << modelPath << std::endl;
     const bool coreScene = modelPath.find("tiananmen_core.obj") != std::string::npos;
     const bool fullScene = coreScene || modelPath.find("tiananmen_balanced.obj") != std::string::npos
         || modelPath.find("Tiananmen+Square") != std::string::npos;
-    Mesh gate(modelPath, fullScene);
+    Mesh gate(modelPath, fullScene, fullScene ? -8.0f * 7877.01f / 108.0f : 0.0f);
     std::unique_ptr<Mesh> monument;
     glm::mat4 monumentModel(1.0f);
     glm::mat4 gateModel = placement(gate, {0, 0, -3}, 18.0f);
@@ -360,6 +375,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh soldier(root + "/model/solider/source/\xe6\x9c\xaa\xe5\x91\xbd\xe5\x90\x8d.obj");
     Mesh cube(root + "/model/demo/cube.obj");
     Mesh ground(12000.0f, 64);
+    Mesh roadPlane(1.0f);
     Mesh flag(14.4f, 9.6f, 64, 32);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
@@ -369,9 +385,35 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     const auto balloons = makeBalloons();
     Texture white(1);
     Texture paving(root + "/model/tile.jpeg");
+    Texture asphalt(root + "/model/road.jpg");
+    const auto drawVehicles = [&](float seconds) {
+        for (int column = 0; column < 4; ++column) {
+            const float depth = animation::paradeDepth + (column - 1.5f) * 6.0f;
+            for (int index = 0; index < 8; ++index) {
+                const auto& tank = *tanks[index % tanks.size()];
+                const float horizontal = animation::tankPosition(seconds, index);
+                const auto extent = tank.maximum() - tank.minimum();
+                const float localSpeed = animation::tankSpeed * std::max({extent.x, extent.y, extent.z}) / 6.0f;
+                shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
+                shader.matrix("model", placement(tank, {horizontal, 0.08f, depth}, 6.0f, glm::radians(180.0f)));
+                tank.draw(shader, white.handle, glm::vec3(1));
+            }
+            shader.vector("animationState", glm::vec3(seconds, 0, 0));
+            shader.matrix("model", placement(launcher, {animation::tankPosition(seconds, 8), 0.08f, depth},
+                10.0f, glm::radians(90.0f)));
+            launcher.draw(shader, white.handle, glm::vec3(1));
+            shader.matrix("model", placement(nuclearLauncher, {animation::tankPosition(seconds, 9), 0.08f, depth},
+                12.0f, glm::radians(180.0f)));
+            nuclearLauncher.draw(shader, white.handle, glm::vec3(1));
+        }
+        shader.vector("animationState", glm::vec3(seconds, 0, 0));
+    };
     std::cout << "Ready. Space: pause, R: replay, arrows: shots, B: bump toggle, Esc: exit" << std::endl;
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, white.handle);
+    glActiveTexture(GL_TEXTURE0);
     double previous = glfwGetTime();
     float seconds = 0.0f;
     bool paused = false;
@@ -379,9 +421,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
     bool reflectionBackgroundReady = false;
-    const std::array<float, 16> captureTimes = {0, 2.5f, animation::shotTimes[1], 7.6f, 9.3f,
-        animation::shotTimes[2], 14.5f, animation::shotTimes[3], animation::aircraftStart, 23, 34, 35,
-        38, 41, 42.5f, 44};
+    const std::array<float, 22> captureTimes = {4.8f, 4.9f, 5.0f, 5.3f, 7.6f, 10, 12, 14.4f, 15.5f,
+        animation::marchStart, 18.3f, animation::marchLiftStart, 19.4f, animation::marchPanMid,
+        21.4f, animation::aircraftTrack, 24, 26, balloonRelease, 32, 35.5f, animation::duration};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -409,34 +451,42 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glfwWaitEventsTimeout(0.05);
             continue;
         }
+        const bool reflectionShot = seconds >= animation::reflectionStart && seconds < animation::marchStart;
         const int backgroundPasses = reflectionBackgroundReady ? 0 : ReflectionMap::faceCount;
-        for (int renderPass = 0; renderPass < 2 + backgroundPasses; ++renderPass) {
+        const int reflectionPasses = reflectionShot ? ReflectionMap::faceCount : 0;
+        for (int renderPass = 0; renderPass < 2 + backgroundPasses + reflectionPasses; ++renderPass) {
         const bool depthPass = renderPass == 0;
         const bool backgroundPass = renderPass > 0 && renderPass <= backgroundPasses;
-        const int face = backgroundPass ? renderPass - 1 : 0;
+        const bool movingReflectionPass = renderPass > backgroundPasses && renderPass <= backgroundPasses + reflectionPasses;
+        const bool reflectionPass = backgroundPass || movingReflectionPass;
+        const int face = backgroundPass ? renderPass - 1 : renderPass - backgroundPasses - 1;
         glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, depthPass ? 0 : shadows.texture);
+        glBindTexture(GL_TEXTURE_2D, depthPass ? white.handle : shadows.texture);
         glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, reflectionMap.texture);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, movingReflectionPass ? reflectionBackground.texture : reflectionMap.texture);
         glActiveTexture(GL_TEXTURE0);
-        if (backgroundPass) {
-            reflectionMap.bindFace(face);
+        if (reflectionPass) {
+            if (backgroundPass) reflectionBackground.bindFace(face);
+            else reflectionMap.copyFace(reflectionBackground, face);
             glViewport(0, 0, ReflectionMap::resolution, ReflectionMap::resolution);
         } else {
             glBindFramebuffer(GL_FRAMEBUFFER, depthPass ? shadows.framebuffer : 0);
             glViewport(0, 0, depthPass ? ShadowMap::resolution : width, depthPass ? ShadowMap::resolution : height);
         }
         glClearColor(0.46f, 0.70f, 0.88f, 1.0f);
-        glClear(depthPass ? GL_DEPTH_BUFFER_BIT : GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        if (!movingReflectionPass) glClear(depthPass ? GL_DEPTH_BUFFER_BIT : GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         const auto shot = animation::shot(seconds);
-        const glm::vec3 camera = backgroundPass ? reflectionCenter : vector(shot.camera);
+        const glm::vec3 camera = reflectionPass ? reflectionCenter : vector(shot.camera);
         const glm::vec3 target = vector(shot.target);
         const float aspect = static_cast<float>(width) / height;
-        const glm::mat4 view = backgroundPass ? ReflectionMap::faceView(camera, face)
+        const glm::mat4 view = reflectionPass ? ReflectionMap::faceView(camera, face)
             : glm::lookAt(camera, target, glm::vec3(0, 1, 0));
-        const glm::mat4 projection = backgroundPass ? reflectionProjection
-            : glm::perspective(glm::radians(44.0f), aspect, 0.1f, 24000.0f);
-        if (!depthPass && !backgroundPass) sky.draw(view, projection);
+        const float marchPan = glm::smoothstep(animation::marchLiftStart, animation::aircraftTrack, seconds);
+        const float shotFov = seconds >= animation::marchStart && seconds < animation::aircraftTrack
+            ? glm::mix(glm::radians(30.0f), verticalFov, marchPan) : verticalFov;
+        const glm::mat4 projection = reflectionPass ? reflectionProjection
+            : glm::perspective(reflectionShot ? glm::radians(30.0f) : shotFov, aspect, 0.1f, 24000.0f);
+        if (!depthPass && !movingReflectionPass) sky.draw(view, projection);
         shader.use();
         shader.matrix("view", depthPass ? lightView : view);
         shader.matrix("projection", depthPass ? lightProjection : projection);
@@ -448,11 +498,21 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         shader.integer("metalSurface", 0);
         shader.integer("reflectionMap", 3);
         shader.vector("cameraPosition", camera);
-        shader.vector("lightPosition", glm::normalize(glm::vec3(-45, 80, 43)));
+        shader.vector("lightPosition", glm::normalize(sunlight));
+        shader.floating("lightingSceneScale", lightingSceneScale);
         shader.integer("diffuseMap", 0);
         shader.integer("skyEnvironmentMap", 1);
+        shader.vector("paradeRoadCenter", roadCenter);
+        shader.vector("paradeRoadSize", roadSize);
+        shader.floating("sourceRoadPadding", 0.0f);
+        shader.integer("asphaltSurface", 0);
         shader.integer("bumpEnabled", bump && !backgroundPass ? 1 : 0);
         shader.vector("animationState", glm::vec3(seconds, 0, 0));
+        shader.vector("surfaceState", glm::vec3(0));
+        if (movingReflectionPass) {
+            drawVehicles(seconds);
+            continue;
+        }
         shader.vector("surfaceState", glm::vec3(bump && !backgroundPass ? 1 : 0, 0, 0));
         // A large dark base plane fills any holes in the source scene's terrain
         // (between the gate and the buildings behind it, and beyond the plaza).
@@ -463,7 +523,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         ground.draw(shader, paving.handle, glm::vec3(0.92f), paving.handle);
         shader.vector("surfaceState", glm::vec3(0));
         shader.matrix("model", gateModel);
+        shader.floating("sourceRoadPadding", 1.5f);
         gate.draw(shader, white.handle, glm::vec3(1), paving.handle);
+        shader.floating("sourceRoadPadding", 0.0f);
         if (monument) {
             shader.matrix("model", monumentModel);
             monument->draw(shader, white.handle, glm::vec3(1));
@@ -503,12 +565,14 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 box(monumentCenter + glm::vec3(side * 2.36f, 0.65f, 0), {0.10f, 0.09f, 4.65f}, {0.87f, 0.86f, 0.81f});
             }
         }
-        constexpr float roadCenter = (animation::paradeRoadFirst + animation::paradeRoadLast) * 0.5f;
-        constexpr float roadLength = animation::paradeRoadLast - animation::paradeRoadFirst;
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(-8.0f, -8.0f);
-        box({roadCenter, 0.08f, animation::paradeDepth}, {roadLength + 120.0f, 0.08f, 48.0f}, {0.23f, 0.25f, 0.27f});
-        glDisable(GL_POLYGON_OFFSET_FILL);
+        // The asphalt is the road's only top surface. A nearly coplanar black box
+        // underneath it caused depth-buffer fighting in distant approach views.
+        shader.integer("asphaltSurface", 1);
+        shader.matrix("model", glm::scale(glm::translate(glm::mat4(1),
+            glm::vec3(roadCenter.x, roadCenter.y + roadSize.y * 0.5f, roadCenter.z)),
+            glm::vec3(roadSize.x * 0.5f, 1, roadSize.z * 0.5f)));
+        roadPlane.draw(shader, asphalt.handle, glm::vec3(0.9f));
+        shader.integer("asphaltSurface", 0);
         for (int stripe = -34; stripe <= 12; ++stripe)
             box({stripe * 2.5f, 0.13f, animation::paradeDepth + 2.2f}, {1.2f, 0.015f, 0.08f}, {0.92f, 0.86f, 0.6f});
         const auto postSection = [&](glm::vec3 base, float radius, float height, glm::vec3 color) {
@@ -518,8 +582,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             postCylinder.draw();
         };
         for (int side : {-1, 1}) {
-            const float edge = animation::paradeDepth + side * 24.0f;
-            box({roadCenter, 0.075f, edge + side * 0.55f}, {roadLength, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
+            const float edge = animation::paradeDepth + side * animation::roadCurbOffset;
+            box({roadCenter.x, 0.075f, edge + side * 0.55f}, {roadLength, 0.06f, 0.9f}, {0.62f, 0.64f, 0.62f});
             for (int section = static_cast<int>(animation::paradeRoadFirst) + 1;
                  section < animation::paradeRoadLast; ++section) {
                 const float horizontal = static_cast<float>(section);
@@ -528,14 +592,14 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             }
             for (int drain = -10; drain <= 5; ++drain) {
                 for (int slot = 0; slot < 6; ++slot)
-                    box({drain * 8.0f + slot * 0.08f, 0.081f, edge - side * 0.22f},
+                    box({drain * 8.0f + slot * 0.08f, 0.13f, edge - side * 0.22f},
                         {0.035f, 0.012f, 0.18f}, {0.12f, 0.15f, 0.16f});
             }
             for (int post = -10; post <= 5; ++post) {
                 const float horizontal = post * 8.0f;
+                const bool reflectionPost = side == 1 && horizontal == animation::reflectionBall.x;
                 const float depth = animation::paradeDepth + side * animation::roadPostOffset;
                 const glm::vec3 center(horizontal, animation::reflectionBall.y, depth);
-                const bool reflectionPost = center == reflectionCenter;
                 if (backgroundPass && reflectionPost) continue;
                 postSection({horizontal, 0.055f, depth}, 0.18f, 0.08f, {0.29f, 0.32f, 0.33f});
                 postSection({horizontal, 0.10f, depth}, 0.145f, 0.60f, {0.27f, 0.31f, 0.32f});
@@ -543,8 +607,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                 postSection({horizontal, capBase, depth}, 0.165f, animation::roadPostCapTop - capBase,
                     {0.78f, 0.74f, 0.57f});
                 // One hero post carries a polished metal ball that reflects the environment.
-                if (!backgroundPass) {
-                    shader.integer("metalSurface", reflectionPost ? 2 : 1);
+                if (!reflectionPass) {
+                    shader.integer("metalSurface", reflectionShot && reflectionPost ? 2 : 1);
                     shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(animation::roadBallRadius)));
                     glFrontFace(GL_CW);
                     metalSphere.draw();
@@ -556,54 +620,35 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const auto crown = [&](glm::vec3 position, glm::vec3 size, glm::vec3 color) {
             shader.matrix("model", glm::scale(glm::translate(glm::mat4(1), position), size));
             shader.vector("tint", color);
+            glFrontFace(GL_CW);
             foliage.draw();
+            glFrontFace(GL_CCW);
         };
         for (int side : {-1, 1}) {
-            for (int cluster = -3; cluster <= 3; ++cluster) {
-                if (cluster == 0) continue;
-                const float horizontal = cluster * 12.0f;
-                const float depth = animation::paradeDepth + side * 30.0f;
-                box({horizontal, 0.23f, depth}, {4.2f, 0.35f, 2.4f}, {0.62f, 0.65f, 0.62f});
-                box({horizontal, 0.42f, depth}, {3.9f, 0.08f, 2.1f}, {0.22f, 0.24f, 0.16f});
-                box({horizontal, 5.5f, depth}, {0.8f, 8.0f, 0.8f}, {0.30f, 0.25f, 0.19f});
-                crown({horizontal, 11.0f, depth}, {5.0f, 6.5f, 5.0f}, {0.19f, 0.36f, 0.21f});
-                crown({horizontal - 2.0f, 10.0f, depth + 0.3f}, {3.0f, 4.2f, 3.2f}, {0.25f, 0.42f, 0.24f});
-                crown({horizontal + 2.0f, 11.0f, depth - 0.3f}, {3.2f, 4.6f, 3.0f}, {0.22f, 0.39f, 0.25f});
+            for (int cluster = -37; cluster <= 22; ++cluster) {
+                const float horizontal = cluster * 13.0f;
+                // Leave gaps at the approach turn and at the infantry-to-aircraft pan.
+                if (cluster == 0 || (side == 1 && horizontal > -136.0f && horizontal < -65.0f)) continue;
+                const float depth = animation::paradeDepth + side * (animation::roadCurbOffset + 5.0f);
+                const float size = 0.60f + 0.07f * (0.5f + 0.5f * std::sin(cluster * 2.37f + side));
+                box({horizontal, 0.20f, depth}, {2.8f, 0.30f, 1.8f}, {0.62f, 0.65f, 0.62f});
+                box({horizontal, 0.37f, depth}, {2.55f, 0.06f, 1.55f}, {0.22f, 0.24f, 0.16f});
+                // Both cylinders start in the soil; the old box trunk began 1 metre above it.
+                postSection({horizontal, 0.38f, depth}, 0.34f, 0.25f, {0.30f, 0.25f, 0.19f});
+                postSection({horizontal, 0.38f, depth}, 0.32f * size, 7.1f * size, {0.30f, 0.25f, 0.19f});
+                crown({horizontal, 9.1f * size, depth}, size * glm::vec3(3.9f, 4.6f, 3.9f), {0.19f, 0.36f, 0.21f});
+                crown({horizontal - 1.6f * size, 8.2f * size, depth + 0.3f}, size * glm::vec3(2.7f, 3.3f, 2.9f), {0.25f, 0.42f, 0.24f});
+                crown({horizontal + 1.5f * size, 8.9f * size, depth - 0.3f}, size * glm::vec3(2.8f, 3.6f, 2.6f), {0.22f, 0.39f, 0.25f});
                 for (int shrub : {-1, 1}) {
-                    crown({horizontal + shrub * 1.4f, 0.75f, depth + 0.45f}, {0.55f, 0.42f, 0.55f}, {0.32f, 0.46f, 0.23f});
+                    crown({horizontal + shrub * 0.9f, 0.60f, depth + 0.3f}, {0.36f, 0.28f, 0.36f}, {0.32f, 0.46f, 0.23f});
                     for (int bloom = 0; bloom < 3; ++bloom)
-                        crown({horizontal + shrub * 1.4f + (bloom - 1) * 0.22f, 1.07f, depth + 0.5f},
-                            {0.12f, 0.09f, 0.12f}, {0.78f, 0.24f + bloom * 0.12f, 0.24f});
+                        crown({horizontal + shrub * 0.9f + (bloom - 1) * 0.15f, 0.82f, depth + 0.35f},
+                            {0.08f, 0.06f, 0.08f}, {0.78f, 0.24f + bloom * 0.12f, 0.24f});
                 }
             }
         }
         if (backgroundPass) continue;
-        // 装甲方队：4 列 × 8 辆坦克（4 种型号循环），后方跟铠甲-S1 与核弹发射车。
-        for (int column = 0; column < 4; ++column) {
-            const float depth = animation::paradeDepth + (column - 1.5f) * 6.0f;
-            for (int index = 0; index < 8; ++index) {
-                const auto& tank = *tanks[index % tanks.size()];
-                const float horizontal = animation::tankPosition(seconds, index);
-                const auto extent = tank.maximum() - tank.minimum();
-                const float localSpeed = animation::tankSpeed * std::max({extent.x, extent.y, extent.z}) / 6.0f;
-                shader.vector("animationState", glm::vec3(seconds, 0, localSpeed));
-                shader.matrix("model", placement(tank, {horizontal, 0.08f, depth}, 6.0f, glm::radians(180.0f)));
-                tank.draw(shader, white.handle, glm::vec3(1));
-            }
-            {
-                const float horizontal = animation::tankPosition(seconds, 8);
-                shader.vector("animationState", glm::vec3(seconds, 0, 0));
-                shader.matrix("model", placement(launcher, {horizontal, 0.08f, depth}, 10.0f, glm::radians(90.0f)));
-                launcher.draw(shader, white.handle, glm::vec3(1));
-            }
-            {
-                const float horizontal = animation::tankPosition(seconds, 9);
-                shader.vector("animationState", glm::vec3(seconds, 0, 0));
-                shader.matrix("model", placement(nuclearLauncher, {horizontal, 0.08f, depth}, 12.0f, glm::radians(180.0f)));
-                nuclearLauncher.draw(shader, white.handle, glm::vec3(1));
-            }
-        }
-        shader.vector("animationState", glm::vec3(seconds, 0, 0));
+        drawVehicles(seconds);
         // 步兵方阵：24 列 × 16 排，扩大后的阅兵方阵。
         for (int row = 0; row < 24; ++row) {
             for (int column = 0; column < 16; ++column) {
@@ -853,7 +898,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glEnable(GL_DEPTH_TEST);
         }
         const auto shot = animation::shot(seconds);
-        const char* names[] = {"Approach", "Armor", "March", "Flag", "Flypast", "Finale"};
+        const char* names[] = {"Approach", "Armor", "Reflection", "March", "Flypast", "Finale"};
         const std::string title = "Parade Animation | " + std::string(names[shot.index]) + " | "
             + std::to_string(seconds).substr(0, 4) + " / "
             + std::to_string(static_cast<int>(animation::duration)) + " s" + (paused ? " | Paused" : "");
