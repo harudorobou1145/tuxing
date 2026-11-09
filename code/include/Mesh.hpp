@@ -22,7 +22,9 @@ public:
     void draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GLuint paving = 0) const;
     const glm::vec3& minimum() const { return boundsMin; }
     const glm::vec3& maximum() const { return boundsMax; }
+    float groundHeight(float x, float z, float fallback) const;
 private:
+    std::vector<glm::vec3> plazaTriangles;
     struct Batch {
         GLint first;
         GLsizei count;

@@ -184,6 +184,18 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
             || shape.name == "Bottom" || shape.name == "Bottom_1"
             || shape.name == "Tour_centre_Square" || shape.name == "Cube");
         for (std::size_t offset = 0; offset + 2 < shape.mesh.indices.size(); offset += 3) {
+            if (plazaGround) {
+                glm::vec3 points[3];
+                for (int corner = 0; corner < 3; ++corner) {
+                    const auto index = 3 * shape.mesh.indices[offset + corner].vertex_index;
+                    points[corner] = {attributes.vertices[index], attributes.vertices[index + 1], attributes.vertices[index + 2]};
+                }
+                if (std::max({points[0].x, points[1].x, points[2].x}) >= -13000
+                    && std::min({points[0].x, points[1].x, points[2].x}) <= 9000
+                    && std::max({points[0].z, points[1].z, points[2].z}) >= 7500
+                    && std::min({points[0].z, points[1].z, points[2].z}) <= 33000)
+                    plazaTriangles.insert(plazaTriangles.end(), points, points + 3);
+            }
             bool ground = plazaGround;
             bool raisedPlaza = false;
             if (plazaGround && raisedPlazaTexture) {
@@ -382,6 +394,30 @@ Mesh::~Mesh() {
 void Mesh::draw() const {
     glBindVertexArray(vertexArray);
     glDrawArrays(GL_TRIANGLES, 0, count);
+}
+
+float Mesh::groundHeight(float x, float z, float fallback) const {
+    float height = fallback;
+    bool found = false;
+    for (std::size_t index = 0; index + 2 < plazaTriangles.size(); index += 3) {
+        const auto& first = plazaTriangles[index];
+        const auto& second = plazaTriangles[index + 1];
+        const auto& third = plazaTriangles[index + 2];
+        const float determinant = (second.z - third.z) * (first.x - third.x)
+            + (third.x - second.x) * (first.z - third.z);
+        if (std::abs(determinant) < 0.0001f) continue;
+        const float firstWeight = ((second.z - third.z) * (x - third.x)
+            + (third.x - second.x) * (z - third.z)) / determinant;
+        const float secondWeight = ((third.z - first.z) * (x - third.x)
+            + (first.x - third.x) * (z - third.z)) / determinant;
+        const float thirdWeight = 1.0f - firstWeight - secondWeight;
+        if (firstWeight >= -0.00001f && secondWeight >= -0.00001f && thirdWeight >= -0.00001f) {
+            const float candidate = firstWeight * first.y + secondWeight * second.y + thirdWeight * third.y;
+            height = found ? std::max(height, candidate) : candidate;
+            found = true;
+        }
+    }
+    return height;
 }
 
 void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GLuint paving) const {

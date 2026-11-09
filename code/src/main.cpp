@@ -380,6 +380,54 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
     Mesh treeMesh(root + "/model/tree/tree.obj");
+    std::vector<std::unique_ptr<Mesh>> civilians;
+    if (fullScene) {
+        for (const auto& name : {"casual", "hoodie", "suit"})
+            civilians.push_back(std::make_unique<Mesh>(root + "/model/civilians/" + name + ".obj"));
+    }
+    const auto plazaPoint = [&](float horizontal, float depth) {
+        const auto local = glm::inverse(gateModel) * glm::vec4(horizontal, 0, depth, 1);
+        const float height = gate.groundHeight(local.x, local.z, -10000.0f);
+        if (height < -9999.0f) throw std::runtime_error("Plaza placement has no terrain support");
+        return glm::vec3(gateModel * glm::vec4(local.x, height, local.z, 1));
+    };
+    struct Visitor {
+        int model;
+        glm::mat4 transform;
+    };
+    std::vector<Visitor> visitors;
+    std::vector<glm::vec3> plazaGardens;
+    std::vector<glm::vec3> plazaSeats;
+    std::vector<glm::vec3> plazaHedges;
+    if (fullScene) {
+        for (int group = 0; group < 22; ++group) {
+            const float horizontal = (group % 2 ? 1.0f : -1.0f)
+                * (group % 4 < 2 ? 18.0f + (group * 7 % 20) : 100.0f + (group % 7));
+            const float depth = 175.0f + (group * 37 % 192);
+            for (int member = 0; member < 2 + group % 3; ++member) {
+                const int model = (group + member) % civilians.size();
+                const auto position = plazaPoint(horizontal + member * 1.35f,
+                    depth + (member % 2) * 1.1f);
+                const float height = member == 2 && group % 3 == 0 ? 1.25f : 1.78f + 0.08f * (group % 3);
+                const auto extent = civilians[model]->maximum() - civilians[model]->minimum();
+                const float size = height * std::max({extent.x, extent.y, extent.z}) / extent.y;
+                visitors.push_back({model, placement(*civilians[model], position, size,
+                    glm::radians(static_cast<float>((group * 73 + member * 61) % 360)))});
+            }
+        }
+        for (int side : {-1, 1})
+            for (float depth : {205.0f, 265.0f, 325.0f})
+                plazaGardens.push_back(plazaPoint(side * 96.0f, depth));
+        for (const auto& base : plazaGardens)
+            for (int side : {-1, 1})
+                plazaSeats.push_back(plazaPoint(base.x, base.z + side * 4.0f));
+        for (int side : {-1, 1})
+            for (float center : {220.0f, 296.0f})
+                for (int shrub = 0; shrub < 15; ++shrub)
+                    plazaHedges.push_back(plazaPoint(side * 87.0f, center - 27.0f + shrub * 3.85f));
+        std::cout << "Plaza: " << visitors.size() << " visitors, " << plazaGardens.size()
+            << " gardens, terrain support verified" << std::endl;
+    }
     Mesh balloonSphere(1.0f, 18, 12);
     Mesh metalSphere(1.0f, 40, 28);
     Mesh postCylinder(1.0f, 1.0f, 32);
@@ -422,9 +470,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     bool previousLeft = false, previousRight = false, previousBump = false;
     bool bump = true;
     bool reflectionBackgroundReady = false;
-    const std::array<float, 22> captureTimes = {4.8f, 4.9f, 5.0f, 5.3f, 7.6f, 10, 12, 14.4f, 15.5f,
+    const std::array<float, 23> captureTimes = {4.8f, 4.9f, 5.0f, 5.3f, 7.6f, 10, 12, 14.4f, 15.5f,
         animation::marchStart, 18.3f, animation::marchLiftStart, 19.4f, animation::marchPanMid,
-        21.4f, animation::aircraftTrack, 24, 26, balloonRelease, 32, 35.5f, animation::duration};
+        21.4f, animation::aircraftTrack, 24, 26, balloonRelease, 32, 35.5f, animation::duration, 0.0f};
     std::size_t captureIndex = 0;
     if (!captureDirectory.empty()) std::filesystem::create_directories(captureDirectory);
     while (!glfwWindowShouldClose(window)) {
@@ -518,6 +566,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         // A large dark base plane fills any holes in the source scene's terrain
         // (between the gate and the buildings behind it, and beyond the plaza).
         shader.integer("pavingSurface", 0);
+        shader.integer("plazaLayout", fullScene ? 1 : 0);
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.55f, 0.0f)));
         ground.draw(shader, white.handle, glm::vec3(0.30f, 0.32f, 0.28f), 0);
         shader.matrix("model", glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.02f, 0.0f)));
@@ -643,6 +692,36 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                         crown({horizontal + shrub * 0.9f + (bloom - 1) * 0.15f, 0.82f, depth + 0.35f},
                             {0.08f, 0.06f, 0.08f}, {0.78f, 0.24f + bloom * 0.12f, 0.24f});
                 }
+            }
+        }
+        if (fullScene) {
+            shader.integer("pavingSurface", 0);
+            shader.integer("roofSurface", 0);
+            shader.integer("architectureSurface", 0);
+            shader.vector("animationState", glm::vec3(seconds, 0, 0));
+            glBindTexture(GL_TEXTURE_2D, white.handle);
+            for (const auto& base : plazaHedges)
+                crown(base + glm::vec3(0, 0.42f, 0), {0.95f, 0.6f, 1.85f}, {0.23f, 0.39f, 0.22f});
+            for (std::size_t garden = 0; garden < plazaGardens.size(); ++garden) {
+                const auto& base = plazaGardens[garden];
+                box(base + glm::vec3(0, 0.35f, 0), {12, 0.7f, 4.5f}, {0.63f, 0.65f, 0.62f});
+                box(base + glm::vec3(0, 0.73f, 0), {11.4f, 0.08f, 3.9f}, {0.22f, 0.25f, 0.17f});
+                for (int shrub = -4; shrub <= 4; ++shrub) {
+                    crown(base + glm::vec3(shrub * 1.2f, 1.05f, 0), {0.8f, 0.5f, 1.35f}, {0.27f, 0.42f, 0.22f});
+                    crown(base + glm::vec3(shrub * 1.2f, 1.48f, 0.35f), {0.3f, 0.18f, 0.3f},
+                        shrub % 2 ? glm::vec3(0.84f, 0.27f, 0.24f) : glm::vec3(0.92f, 0.75f, 0.28f));
+                }
+                for (int side : {-1, 1}) {
+                    const auto seat = plazaSeats[2 * garden + (side == 1 ? 1 : 0)];
+                    box(seat + glm::vec3(0, 0.49f, 0), {3.4f, 0.16f, 0.65f}, {0.42f, 0.33f, 0.25f});
+                    box(seat + glm::vec3(0, 0.86f, side * 0.27f), {3.4f, 0.55f, 0.12f}, {0.42f, 0.33f, 0.25f});
+                    for (int leg : {-1, 1})
+                        box(seat + glm::vec3(leg * 1.25f, 0.23f, 0), {0.14f, 0.46f, 0.55f}, {0.23f, 0.26f, 0.25f});
+                }
+            }
+            for (const auto& visitor : visitors) {
+                shader.matrix("model", visitor.transform);
+                civilians[visitor.model]->draw(shader, white.handle, glm::vec3(1));
             }
         }
         if (backgroundPass) continue;

@@ -5,6 +5,7 @@ in vec2 uv;
 in vec3 localPosition;
 uniform int trackSurface;
 uniform int pavingSurface;
+uniform int plazaLayout;
 uniform vec3 paradeRoadCenter;
 uniform vec3 paradeRoadSize;
 uniform float sourceRoadPadding;
@@ -116,6 +117,35 @@ void main() {
     float shininess = roofSurface == 1 ? 48.0 : (pavingSurface == 1 || asphaltSurface == 1) ? 12.0 : 32.0;
     float specular = diffuse > 0.0 ? pow(max(dot(viewDirection, reflected), 0.0), shininess) : 0.0;
     vec3 albedo = texture(diffuseMap, surfaceUV).rgb * tint;
+    if (plazaLayout == 1 && pavingSurface == 1 && abs(worldPosition.x) < 118.0
+        && worldPosition.z > 168.0 && worldPosition.z < 382.0) {
+        vec2 point = worldPosition.xz;
+        float stone = texture(diffuseMap, point / 2.4).r;
+        albedo = vec3(0.67, 0.69, 0.68) * (0.88 + 0.18 * stone);
+        if (abs(point.x) < 43.0)
+            albedo = vec3(0.79, 0.80, 0.77) * (0.88 + 0.16 * stone);
+        float axisBorder = abs(abs(point.x) - 43.0);
+        float crossBand = min(abs(point.y - 174.0), min(abs(point.y - 258.0), abs(point.y - 370.0)));
+        if (axisBorder < 0.7 || crossBand < 1.1)
+            albedo = vec3(0.43, 0.47, 0.47);
+        vec2 slab = abs(fract(point / vec2(6.0, 9.0)) - 0.5);
+        vec2 filtering = max(fwidth(point / vec2(6.0, 9.0)), vec2(0.001));
+        vec2 joint = smoothstep(vec2(0.492) - filtering, vec2(0.5), slab);
+        albedo *= 1.0 - 0.10 * max(joint.x, joint.y);
+        float lawnDepth = min(abs(point.y - 220.0), abs(point.y - 296.0));
+        vec2 lawnOffset = vec2(abs(abs(point.x) - 71.0) - 18.0, lawnDepth - 30.0);
+        float lawnEdge = max(lawnOffset.x, lawnOffset.y);
+        if (lawnEdge < 1.2) {
+            albedo = vec3(0.82, 0.81, 0.73) * (0.94 + 0.06 * stone);
+            if (lawnEdge < 0.0) {
+                float stripes = 0.5 + 0.5 * sin(point.y * 0.65);
+                albedo = mix(vec3(0.24, 0.40, 0.22), vec3(0.31, 0.47, 0.26), stripes)
+                    * (0.90 + 0.14 * stone);
+                if (lawnEdge > -1.4)
+                    albedo = vec3(0.55, 0.34, 0.29) * (0.90 + 0.12 * stone);
+            }
+        }
+    }
     if (architectureSurface > 0) {
         vec2 stoneUV = abs(normal.x) > abs(normal.z) ? worldPosition.zy : worldPosition.xy;
         vec2 blockUV = stoneUV / vec2(0.85, 0.38);
