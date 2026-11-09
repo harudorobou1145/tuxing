@@ -14,7 +14,10 @@
 #include <iostream>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
+#include <string_view>
+#include <unordered_map>
 
 namespace {
 struct Vertex {
@@ -63,6 +66,52 @@ void upload(const std::vector<Vertex>& vertices, GLuint& vertexArray, GLuint& ve
 
 bool isFence(const std::string& name) {
     return name.find("Fence") != std::string::npos || name.find("fence") != std::string::npos;
+}
+
+// The balanced export sampled the tower family one object at a time, separating
+// some rooftop pieces from their original towers. Reuse compatible pieces on
+// the neighboring towers that survived the export, within the same city tile.
+auto balancedRoofOffsets(const tinyobj::ObjReader& reader) {
+    std::unordered_map<std::string, std::optional<glm::vec3>> offsets;
+    constexpr std::string_view family = "orto-edificio22-completo.";
+    std::unordered_map<std::string_view, const tinyobj::shape_t*> towers;
+    for (const auto& shape : reader.GetShapes()) {
+        if (shape.name.compare(0, family.size(), family) == 0) towers.emplace(shape.name, &shape);
+    }
+    const auto bounds = [&](const tinyobj::shape_t& shape) {
+        const auto& vertices = reader.GetAttrib().vertices;
+        glm::vec3 low(INFINITY), high(-INFINITY);
+        for (const auto& index : shape.mesh.indices) {
+            const auto i = static_cast<std::size_t>(index.vertex_index) * 3;
+            const glm::vec3 point{vertices.at(i), vertices.at(i + 1), vertices.at(i + 2)};
+            low = glm::min(low, point);
+            high = glm::max(high, point);
+        }
+        return std::pair{low, high};
+    };
+    for (const auto& [name, roof] : towers) {
+        const auto part = name.substr(family.size(), 3);
+        if (part == "003" || part == "021" || part == "045") {
+            offsets.emplace(name, std::nullopt);
+            continue;
+        }
+        const std::string_view bodyPart = part == "027" ? "024" : part == "036" ? "033" : part == "051" ? "048" : "";
+        if (bodyPart.empty()) continue;
+        std::string bodyName(name);
+        bodyName.replace(family.size(), 3, bodyPart);
+        const auto body = towers.find(bodyName);
+        if (body == towers.end()) {
+            offsets.emplace(name, std::nullopt);
+            continue;
+        }
+        const auto [roofMin, roofMax] = bounds(*roof);
+        const auto [bodyMin, bodyMax] = bounds(*body->second);
+        auto offset = ((bodyMin + bodyMax) - (roofMin + roofMax)) * 0.5f;
+        // Embed the slab as in the matching tower template.
+        offset.y = bodyMax.y - roofMin.y - (part == "027" ? 0.7f : 16.0f);
+        offsets.emplace(name, offset);
+    }
+    return offsets;
 }
 }
 
@@ -124,26 +173,39 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         materialTextures[material] = texture;
         textures.push_back(texture);
     }
-    bool firstPosition = true;
-    for (const auto& shape : reader.GetShapes()) {
-        if (soldier && shape.name == "Cube") continue;
-        if (isFence(shape.name)) continue;
+    const auto roofOffsets = sourcePath.filename() == "tiananmen_balanced.obj" && tiananmen
+        ? balancedRoofOffsets(reader) : decltype(balancedRoofOffsets(reader)){};
+    const auto skipShape = [&](const std::string& name) {
+        if ((soldier && name == "Cube") || isFence(name)) return true;
         // The animated pole replaces these two exact source objects; keep its pedestal.
-        if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
+        if (tiananmen && (name == "Cylinder" || name == "Plane")) return true;
         // The exported roof slabs ("Toit_top") are wider than the building body
         // and sit high above it, so their overhang floats in the air.
-        if (tiananmen && (shape.name == "Toit_top" || shape.name == "Toit_top_1")) continue;
+        if (tiananmen && (name == "Toit_top" || name == "Toit_top_1")) return true;
         // The distant skyline's cornice slabs ("Cube.0XX") are exported without
         // their building bodies, so they float as detached roof ledges.
-        if (tiananmen && shape.name.rfind("Cube.0", 0) == 0) continue;
-        if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
+        if (tiananmen && name.rfind("Cube.0", 0) == 0) return true;
+        if (excludeSourceMonument && (name == "Tour_centre_Square" || name == "Cube_3")) return true;
+        const auto roof = roofOffsets.find(name);
+        return roof != roofOffsets.end() && !roof->second;
+    };
+    const auto positionOffset = [&](const std::string& name) {
+        // Move only the long roadside wall, leaving the gate and grandstands in place.
+        if (tiananmen && name == "Cube.2") return glm::vec3(0, 0, roadsideWallOffset);
+        const auto roof = roofOffsets.find(name);
+        return roof == roofOffsets.end() ? glm::vec3(0) : *roof->second;
+    };
+    bool firstPosition = true;
+    for (const auto& shape : reader.GetShapes()) {
+        if (skipShape(shape.name)) continue;
+        const glm::vec3 offset = positionOffset(shape.name);
         for (const auto& index : shape.mesh.indices) {
             if (index.vertex_index < 0 || static_cast<std::size_t>(3 * index.vertex_index + 2) >= attributes.vertices.size()) {
                 throw std::runtime_error("OBJ has invalid position index");
             }
             const auto position = static_cast<std::size_t>(index.vertex_index) * 3;
             glm::vec3 point{attributes.vertices[position], attributes.vertices[position + 1], attributes.vertices[position + 2]};
-            if (tiananmen && shape.name == "Cube.2") point.z += roadsideWallOffset;
+            point += offset;
             if (firstPosition) {
                 boundsMin = point;
                 boundsMax = point;
@@ -179,16 +241,8 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         [](const auto& shape) { return shape.name == "Cube"; });
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
-        if (soldier && shape.name == "Cube") continue;
-        if (isFence(shape.name)) continue;
-        if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
-        // The exported roof slabs ("Toit_top") are wider than the building body
-        // and sit high above it, so their overhang floats in the air.
-        if (tiananmen && (shape.name == "Toit_top" || shape.name == "Toit_top_1")) continue;
-        // The distant skyline's cornice slabs ("Cube.0XX") are exported without
-        // their building bodies, so they float as detached roof ledges.
-        if (tiananmen && shape.name.rfind("Cube.0", 0) == 0) continue;
-        if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
+        if (skipShape(shape.name)) continue;
+        const glm::vec3 translation = positionOffset(shape.name);
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
         const bool roof = roofTexture && shape.name.find("tiananmen_square_Jaune,_toit") == 0;
         const bool plazaGround = tiananmen && shape.name == "Floor/Plancher.1";
@@ -266,8 +320,7 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
                 }
                 const auto position = static_cast<std::size_t>(index.vertex_index) * 3;
                 triangle[corner].position = {attributes.vertices[position], attributes.vertices[position + 1], attributes.vertices[position + 2]};
-                // Move only the long roadside wall, leaving the gate and grandstands in place.
-                if (tiananmen && shape.name == "Cube.2") triangle[corner].position.z += roadsideWallOffset;
+                triangle[corner].position += translation;
                 if (index.normal_index >= 0) {
                     const auto normal = static_cast<std::size_t>(index.normal_index) * 3;
                     if (normal + 2 >= attributes.normals.size()) throw std::runtime_error("OBJ has invalid normal index");
