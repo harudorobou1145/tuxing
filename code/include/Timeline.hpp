@@ -30,8 +30,8 @@ inline constexpr std::array<float, 7> shotTimes{0, 5.3f, reflectionStart, marchS
 constexpr float tankSpeed = 7.5f;
 constexpr float soldierSpeed = 3.9f;
 constexpr float paradeDepth = 72.0f;
-constexpr float paradeRoadFirst = -522.0f;
-constexpr float paradeRoadLast = 300.0f;
+constexpr float paradeRoadFirst = -800.0f;
+constexpr float paradeRoadLast = 600.0f;
 constexpr float paradeRoadWidth = 25.0f;
 constexpr float roadCurbOffset = paradeRoadWidth * 0.5f + 0.15f;
 constexpr float roadPostOffset = roadCurbOffset + 1.2f;

@@ -377,6 +377,7 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
     Mesh ground(12000.0f, 64);
     Mesh roadPlane(1.0f);
     Mesh flag(14.4f, 9.6f, 64, 32);
+    Mesh redFlag(1.5f, 1.0f, 1, 1);
     Mesh smokeQuad(1.0f, 1.0f, 1, 1);
     Mesh foliage(1.0f, 10, 7);
     Mesh treeMesh(root + "/model/tree/tree.obj");
@@ -598,13 +599,9 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             };
             for (int column = 0; column < 19; ++column) {
                 const float depth = 17400.0f + column * 1060.0f;
-                sourceBox({14060, 1000, depth}, {260, 1700, 280}, {0.78f, 0.77f, 0.70f});
-                sourceBox({14060, 160, depth}, {390, 180, 420}, {0.65f, 0.65f, 0.60f});
-                sourceBox({14060, 1860, depth}, {410, 180, 440}, {0.85f, 0.83f, 0.74f});
+                // One solid tower block, no separate roof that could float.
+                sourceBox({14060, 1000, depth}, {260, 1800, 280}, {0.78f, 0.77f, 0.70f});
             }
-            for (int tier = 0; tier < 3; ++tier)
-                sourceBox({14100, 2010.0f + tier * 110.0f, 27000},
-                    {700.0f + tier * 110.0f, 85, 21800.0f + tier * 100.0f}, {0.72f, 0.71f, 0.64f});
             const glm::vec3 monumentCenter = glm::vec3(gateModel * glm::vec4(-1509.614f, 134, 30016.281f, 1));
             for (int side : {-1, 1}) {
                 for (int post = -5; post <= 5; ++post) {
@@ -676,15 +673,12 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
             glFrontFace(GL_CCW);
         };
         for (int side : {-1, 1}) {
-            for (int cluster = -37; cluster <= 22; ++cluster) {
-                const float horizontal = cluster * 13.0f;
-                // Leave gaps at the approach turn and at the infantry-to-aircraft pan.
-                if (cluster == 0 || (side == 1 && horizontal > -136.0f && horizontal < -65.0f)) continue;
+            for (int cluster = -123; cluster <= 92; ++cluster) {
+                const float horizontal = cluster * 6.5f;
                 const float depth = animation::paradeDepth + side * (animation::roadCurbOffset + 5.0f);
-                const float size = 0.60f + 0.07f * (0.5f + 0.5f * std::sin(cluster * 2.37f + side));
+                const float size = 0.60f + 0.07f * (0.5f + 0.5f * std::sin(cluster * 1.2f + side));
                 box({horizontal, 0.20f, depth}, {2.8f, 0.30f, 1.8f}, {0.62f, 0.65f, 0.62f});
                 box({horizontal, 0.37f, depth}, {2.55f, 0.06f, 1.55f}, {0.22f, 0.24f, 0.16f});
-                // Real tree model (trunk + branches + leaves), base planted in the planter.
                 shader.matrix("model", placement(treeMesh, {horizontal, 0.35f, depth}, 11.4f * size));
                 treeMesh.draw(shader, white.handle, glm::vec3(1));
                 for (int shrub : {-1, 1}) {
@@ -693,6 +687,20 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                         crown({horizontal + shrub * 0.9f + (bloom - 1) * 0.15f, 0.82f, depth + 0.35f},
                             {0.08f, 0.06f, 0.08f}, {0.78f, 0.24f + bloom * 0.12f, 0.24f});
                 }
+            }
+        }
+        // 彩旗：道路两侧等距的旗杆 + 五星红旗，营造阅兵氛围。
+        for (int side : {-1, 1}) {
+            for (int pole = -36; pole <= 27; ++pole) {
+                const float horizontal = pole * 22.0f;
+                const float depth = animation::paradeDepth + side * (animation::roadCurbOffset + 2.0f);
+                postSection({horizontal, 0.05f, depth}, 0.10f, 5.5f, {0.40f, 0.42f, 0.41f});
+                shader.vector("animationState", glm::vec3(seconds, 1, 0));
+                shader.vector("surfaceState", glm::vec3(0, 1, 0));
+                shader.matrix("model", glm::translate(glm::mat4(1), glm::vec3(horizontal, 4.8f, depth)));
+                redFlag.draw(shader, white.handle, glm::vec3(1));
+                shader.vector("animationState", glm::vec3(seconds, 0, 0));
+                shader.vector("surfaceState", glm::vec3(0));
             }
         }
         if (fullScene) {
@@ -718,6 +726,18 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
                     box(seat + glm::vec3(0, 0.86f, side * 0.27f), {3.4f, 0.55f, 0.12f}, {0.42f, 0.33f, 0.25f});
                     for (int leg : {-1, 1})
                         box(seat + glm::vec3(leg * 1.25f, 0.23f, 0), {0.14f, 0.46f, 0.55f}, {0.23f, 0.26f, 0.25f});
+                }
+            }
+            // 四块绿化草坪里加绿植（树 + 灌木）。
+            for (int side : {-1, 1}) {
+                for (float depth : {220.0f, 296.0f}) {
+                    const auto treePos = plazaPoint(side * 71.0f, depth);
+                    shader.matrix("model", placement(treeMesh, treePos, 6.0f));
+                    treeMesh.draw(shader, white.handle, glm::vec3(1));
+                    for (int corner : {-1, 1}) {
+                        const auto shrubPos = plazaPoint(side * (71.0f + corner * 12.0f), depth + corner * 10.0f);
+                        crown(shrubPos + glm::vec3(0, 0.5f, 0), {0.9f, 0.55f, 0.9f}, {0.25f, 0.42f, 0.22f});
+                    }
                 }
             }
             for (const auto& visitor : visitors) {

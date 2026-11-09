@@ -130,6 +130,12 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         if (isFence(shape.name)) continue;
         // The animated pole replaces these two exact source objects; keep its pedestal.
         if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
+        // The exported roof slabs ("Toit_top") are wider than the building body
+        // and sit high above it, so their overhang floats in the air.
+        if (tiananmen && (shape.name == "Toit_top" || shape.name == "Toit_top_1")) continue;
+        // The distant skyline's cornice slabs ("Cube.0XX") are exported without
+        // their building bodies, so they float as detached roof ledges.
+        if (tiananmen && shape.name.rfind("Cube.0", 0) == 0) continue;
         if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
         for (const auto& index : shape.mesh.indices) {
             if (index.vertex_index < 0 || static_cast<std::size_t>(3 * index.vertex_index + 2) >= attributes.vertices.size()) {
@@ -176,6 +182,12 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         if (soldier && shape.name == "Cube") continue;
         if (isFence(shape.name)) continue;
         if (tiananmen && (shape.name == "Cylinder" || shape.name == "Plane")) continue;
+        // The exported roof slabs ("Toit_top") are wider than the building body
+        // and sit high above it, so their overhang floats in the air.
+        if (tiananmen && (shape.name == "Toit_top" || shape.name == "Toit_top_1")) continue;
+        // The distant skyline's cornice slabs ("Cube.0XX") are exported without
+        // their building bodies, so they float as detached roof ledges.
+        if (tiananmen && shape.name.rfind("Cube.0", 0) == 0) continue;
         if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
         const bool roof = roofTexture && shape.name.find("tiananmen_square_Jaune,_toit") == 0;
