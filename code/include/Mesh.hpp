@@ -34,6 +34,7 @@ private:
         bool ground = false;
         bool roof = false;
         int architecture = 0;
+        bool plazaTerrain = false;
     };
     std::vector<Batch> batches;
     std::vector<GLuint> textures;
