@@ -169,6 +169,8 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         raisedPlazaTexture = loadDecal(std::filesystem::u8path(objPath).parent_path() / "tile_2.jpeg", true);
         if (raisedPlazaTexture) textures.push_back(raisedPlazaTexture);
     }
+    const bool hasPlazaPlanters = tiananmen && std::any_of(reader.GetShapes().begin(), reader.GetShapes().end(),
+        [](const auto& shape) { return shape.name == "Cube"; });
     std::vector<Vertex> vertices;
     for (const auto& shape : reader.GetShapes()) {
         if (soldier && shape.name == "Cube") continue;
@@ -177,9 +179,9 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
         if (excludeSourceMonument && (shape.name == "Tour_centre_Square" || shape.name == "Cube_3")) continue;
         const bool track = shape.name.find("TrackMesh") != std::string::npos;
         const bool roof = roofTexture && shape.name.find("tiananmen_square_Jaune,_toit") == 0;
-        // This dedicated terrain mesh has uneven heights up to y=132.94.
-        // Classifying it by a per-triangle height threshold leaves brown patches.
         const bool plazaGround = tiananmen && shape.name == "Floor/Plancher.1";
+        const bool plazaTerrain = plazaGround && hasPlazaPlanters;
+        const bool plazaPlanters = tiananmen && shape.name == "Cube";
         const bool groundObject = tiananmen && (shape.name == "Floor/Plancher.1"
             || shape.name == "Bottom" || shape.name == "Bottom_1"
             || shape.name == "Tour_centre_Square" || shape.name == "Cube");
@@ -211,6 +213,11 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
                 ground = std::abs(normal.y) > 0.99f * glm::length(normal)
                     && std::min({points[0].y, points[1].y, points[2].y}) > -80.0f
                     && std::max({points[0].y, points[1].y, points[2].y}) < 50.0f;
+                // Both planter beds sit at source y=41.47, below the raised plaza.
+                raisedPlaza = raisedPlazaTexture && plazaPlanters && ground
+                    && std::all_of(std::begin(points), std::end(points), [](glm::vec3 p) {
+                        return std::abs(p.y - 41.47f) < 0.1f;
+                    });
             }
             const int material = offset / 3 < shape.mesh.material_ids.size() ? shape.mesh.material_ids[offset / 3] : -1;
             const bool validMaterial = material >= 0 && static_cast<std::size_t>(material) < materials.size();
@@ -223,8 +230,8 @@ Mesh::Mesh(const std::string& objPath, bool excludeSourceMonument, float roadsid
                     || shape.name == "Toit_top" || shape.name == "Toit_top_1") ? 1 : 0;
             if (batches.empty() || batches.back().color != color || batches.back().texture != texture
                 || batches.back().track != track || batches.back().ground != ground || batches.back().roof != roof
-                || batches.back().architecture != architecture) {
-                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track, ground, roof, architecture});
+                || batches.back().architecture != architecture || batches.back().plazaTerrain != plazaTerrain) {
+                batches.push_back({static_cast<GLint>(vertices.size()), 0, color, texture, track, ground, roof, architecture, plazaTerrain});
             }
             batches.back().count += 3;
             Vertex triangle[3]{};
@@ -398,6 +405,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
         glDrawArrays(GL_TRIANGLES, 0, count);
     } else {
         for (const auto& batch : batches) {
+            shader.integer("plazaTerrain", batch.plazaTerrain ? 1 : 0);
             shader.integer("architectureSurface", batch.architecture);
             shader.integer("roofSurface", batch.roof ? 1 : 0);
             const bool ground = batch.ground && paving != 0;
@@ -412,6 +420,7 @@ void Mesh::draw(const Shader& shader, GLuint fallback, const glm::vec3& tint, GL
     shader.integer("pavingSurface", 0);
     shader.integer("roofSurface", 0);
     shader.integer("architectureSurface", 0);
+    shader.integer("plazaTerrain", 0);
 }
 
 Mesh::Mesh(float width, float height, int columns, int rows) {

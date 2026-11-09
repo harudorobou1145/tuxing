@@ -482,7 +482,8 @@ void run(GLFWwindow* window, const std::string& modelPath, const std::string& ca
         const float aspect = static_cast<float>(width) / height;
         const glm::mat4 view = reflectionPass ? ReflectionMap::faceView(camera, face)
             : glm::lookAt(camera, target, glm::vec3(0, 1, 0));
-        const float marchPan = glm::smoothstep(animation::marchLiftStart, animation::aircraftTrack, seconds);
+        const float marchPan = animation::smootherStep(
+            animation::segment(seconds, animation::marchLiftStart, animation::aircraftTrack));
         const float shotFov = seconds >= animation::marchStart && seconds < animation::aircraftTrack
             ? glm::mix(glm::radians(30.0f), verticalFov, marchPan) : verticalFov;
         const glm::mat4 projection = reflectionPass ? reflectionProjection

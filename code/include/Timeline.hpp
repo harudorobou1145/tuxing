@@ -12,8 +12,7 @@ inline float finaleFade(float seconds) {
     const float parameter = std::clamp((seconds - fadeStart) / (duration - fadeStart), 0.0f, 1.0f);
     return parameter * parameter * (3.0f - 2.0f * parameter);
 }
-constexpr float aircraftStart = 18.0f;
-constexpr float aircraftPass = 26.0f;
+constexpr float aircraftStart = 16.0f;
 constexpr float aircraftTurn = 31.0f;
 constexpr float balloonRelease = 29.0f;
 constexpr float balloonDepthMin = 280.0f;
@@ -21,11 +20,13 @@ constexpr float balloonDepthRange = 84.0f;
 constexpr float balloonRiseScale = 0.12f;
 constexpr float reflectionStart = 14.5f;
 constexpr float marchStart = 17.5f;
+constexpr float flypastStart = 18.0f;
 constexpr float marchLiftStart = 18.7f;
 constexpr float marchPanMid = 20.0f;
 constexpr float aircraftTrack = 22.0f;
 constexpr float cameraJoin = 26.0f;
-inline constexpr std::array<float, 7> shotTimes{0, 5.3f, reflectionStart, marchStart, aircraftStart, aircraftTurn, duration};
+constexpr float armorCentered = 9.8f;
+inline constexpr std::array<float, 7> shotTimes{0, 5.3f, reflectionStart, marchStart, flypastStart, aircraftTurn, duration};
 constexpr float tankSpeed = 7.5f;
 constexpr float soldierSpeed = 3.9f;
 constexpr float paradeDepth = 72.0f;
@@ -36,10 +37,10 @@ constexpr float roadCurbOffset = paradeRoadWidth * 0.5f + 0.15f;
 constexpr float roadPostOffset = roadCurbOffset + 1.2f;
 constexpr float roadPostCapTop = 0.76f;
 constexpr float roadBallRadius = 0.205f;
-// Source Cylinder's center/base, transformed with the full scene's gateModel.
-constexpr float flagPoleX = -2.74f;
-constexpr float flagPoleZ = 154.0f;
-constexpr float flagBaseOffset = 0.44f;
+// Center of the opening between the four raised stone blocks in the plaza mesh.
+constexpr float flagPoleX = -2.56f;
+constexpr float flagPoleZ = 168.47f;
+constexpr float flagBaseOffset = 0.68f;
 inline float tankPosition(float seconds, int index) {
     return -72.0f + (seconds - 3.0f) * tankSpeed - index * 10.0f;
 }
@@ -52,6 +53,7 @@ struct Point {
 };
 
 inline constexpr Point reflectionBall{-8.0f, roadPostCapTop + roadBallRadius - 0.02f, paradeDepth + roadPostOffset};
+inline constexpr Point flypastCamera{-89.0f, 30.6f, 124.0f};
 
 inline Point bezier(float progress) {
     const float parameter = std::clamp(progress, 0.0f, 1.0f);
@@ -73,6 +75,10 @@ inline float progress(float seconds) {
 
 inline float segment(float seconds, float start, float end) {
     return std::clamp((seconds - start) / (end - start), 0.0f, 1.0f);
+}
+
+inline float smootherStep(float t) {
+    return t * t * t * (10.0f + t * (-15.0f + 6.0f * t));
 }
 
 inline float flagHeight(float seconds) {
@@ -99,29 +105,15 @@ struct Shot {
 };
 
 inline Point aircraft(float seconds) {
-    if (seconds > flightEnd) {
-        // Continue along the final curve's tangent, easing the climb into level flight.
-        const float age = seconds - flightEnd;
-        return {499.2f + 83.484f * age,
-                258.0f + 26.46f * (1.0f - std::exp(-age / 1.5f)),
-                -288.0f - 49.32f * age};
-    }
-    if (seconds < aircraftPass) {
-        // Begin above and behind the infantry instead of far off-screen to the left.
-        return curve({-260, 115, 45}, {-235, 135, 40}, {-195, 174, -114}, {-144, 174, -108},
-                     segment(seconds, aircraftStart, aircraftPass));
-    }
-    if (seconds <= aircraftTurn) {
-        // World-space handles match the incoming velocity and the departure's acceleration.
-        return curve({-144, 174, -108}, {-112.125f, 174, -104.25f}, {153.6f, 180, -108}, {278.4f, 198, -144},
-                     segment(seconds, aircraftPass, aircraftTurn));
-    }
-    return curve({278.4f, 198, -144}, {378.24f, 212.4f, -172.8f}, {387.888f, 234.48f, -222.24f}, {499.2f, 258, -288},
-                 segment(seconds, aircraftTurn, flightEnd));
+    const float time = std::max(seconds - aircraftStart, 0.0f) / (aircraftTurn - aircraftStart);
+    // Accelerate along one heading through the pass and departure.
+    const float distance = time * (0.20f + 0.80f * time);
+    return mix({-260, 115, 45}, {278.4f, 198, -144}, distance);
 }
 
 inline float balloonLaunchHeight(float depth, float radius) {
-    constexpr Point eye{-180.0f - 3.9f * (balloonRelease - aircraftStart), 30.6f, 124};
+    constexpr Point eye{flypastCamera.x - 3.9f * (balloonRelease - flypastStart),
+                        flypastCamera.y, flypastCamera.z};
     const Point look = aircraft(balloonRelease);
     const float pitch = std::atan2(look.y - eye.y, std::hypot(look.x - eye.x, look.z - eye.z));
     const float bottom = eye.y + std::tan(pitch - 22.0f * 3.14159265f / 180.0f) * depth;
@@ -132,26 +124,32 @@ inline Shot shot(float seconds) {
     const float time = std::clamp(seconds, 0.0f, duration);
     const int index = std::min(static_cast<int>(
         std::upper_bound(shotTimes.begin(), shotTimes.end(), time) - shotTimes.begin()) - 1, 5);
-    const auto interpolate = [&](const auto& times, const auto& points, const auto& velocities) {
+    const auto interpolate = [](float at, const auto& times, const auto& points, const auto& velocities) {
         const auto key = static_cast<std::size_t>(
-            std::upper_bound(times.begin(), times.end(), time) - times.begin() - 1);
-        const float parameter = segment(time, times[key], times[key + 1]);
-        const float handleTime = (times[key + 1] - times[key]) / 3.0f;
+            std::upper_bound(times.begin(), times.end(), at) - times.begin() - 1);
+        const float t = segment(at, times[key], times[key + 1]);
+        const float span = times[key + 1] - times[key];
         const auto a = points[key], b = points[key + 1];
         const auto va = velocities[key], vb = velocities[key + 1];
-        return curve(a, {a.x + va.x * handleTime, a.y + va.y * handleTime, a.z + va.z * handleTime},
-                     {b.x - vb.x * handleTime, b.y - vb.y * handleTime, b.z - vb.z * handleTime}, b, parameter);
+        // Quintic Hermite interpolation shares velocity and zero acceleration at each key.
+        const float blend = smootherStep(t);
+        const float startWeight = span * t * (1.0f - t) * (1.0f - t) * (1.0f - t) * (1.0f + 3.0f * t);
+        const float endWeight = span * t * t * t * (1.0f - t) * (3.0f * t - 4.0f);
+        Point point = mix(a, b, blend);
+        return Point{point.x + va.x * startWeight + vb.x * endWeight,
+                     point.y + va.y * startWeight + vb.y * endWeight,
+                     point.z + va.z * startWeight + vb.z * endWeight};
     };
-    constexpr Point flypastCamera{-180, 30.6f, 124};
     if (time >= cameraJoin) {
         Point camera = flypastCamera;
-        camera.x -= 3.9f * (time - aircraftStart);
+        camera.x -= 3.9f * (time - flypastStart);
         Point target = aircraft(time);
         if (time >= aircraftTurn) {
             // Ease into a rising dolly and pass the gaze from the aircraft to the balloon spread.
             const float age = time - aircraftTurn;
-            camera.y += 0.85f * (age - 1.5f * (1.0f - std::exp(-age / 1.5f)));
-            const Point releaseEye{flypastCamera.x - 3.9f * (balloonRelease - aircraftStart),
+            const float rise = 1.0f - std::exp(-age / 1.5f);
+            camera.y += 0.85f * (age - 1.5f * rise * (1.0f + 0.5f * rise));
+            const Point releaseEye{flypastCamera.x - 3.9f * (balloonRelease - flypastStart),
                                    flypastCamera.y, flypastCamera.z};
             const Point releaseLook = aircraft(balloonRelease);
             const float horizontalLength = std::hypot(releaseLook.x - releaseEye.x, releaseLook.z - releaseEye.z);
@@ -160,8 +158,7 @@ inline Shot shot(float seconds) {
                 balloonLaunchHeight(meanDepth, meanDepth * 0.0115f)
                     + meanDepth * 0.725f * (time - balloonRelease) * balloonRiseScale,
                 releaseEye.z + (releaseLook.z - releaseEye.z) / horizontalLength * meanDepth};
-            const float parameter = segment(time, aircraftTurn, aircraftTurn + 5.0f);
-            const float ease = parameter * parameter * (3.0f - 2.0f * parameter);
+            const float ease = smootherStep(segment(time, aircraftTurn, aircraftTurn + 5.0f));
             const auto distance = [&](Point point) {
                 return std::hypot(point.x - camera.x, point.y - camera.y, point.z - camera.z);
             };
@@ -175,18 +172,19 @@ inline Shot shot(float seconds) {
         // Three-quarter view from the monument side, showing the formation's front and depth.
         constexpr float infantrySide = paradeDepth + 10.0f;
         const float frontX = soldierPosition(marchStart) + 24.0f;
-        const std::array<float, 6> times{{marchStart, marchLiftStart, marchPanMid, aircraftTrack, 24, cameraJoin}};
-        const std::array<Point, 6> cameras{{{frontX, 10.5f, infantrySide + 18.0f},
-            {frontX + 4.0f, 10.6f, infantrySide + 18.5f}, {-103.8f, 13.6f, 96}, {-120, 19, 95},
-            {-170, 24, 120}, {flypastCamera.x - 3.9f * (cameraJoin - aircraftStart), flypastCamera.y, flypastCamera.z}}};
-        const std::array<Point, 6> velocities{{{3.9f, 0, 0}, {2, 0.2f, -0.8f}, {-6, 2, -2},
-            {-10, 2, 0}, {-20, 3.6f, 2}, {-3.9f, 0, 0}}};
-        const Point camera = interpolate(times, cameras, velocities);
+        const std::array<float, 3> times{{marchStart, 20.4f, cameraJoin}};
+        const std::array<Point, 3> cameras{{{frontX, 10.5f, infantrySide + 18.0f},
+            {-82, 14.2f, 103.5f},
+            {flypastCamera.x - 3.9f * (cameraJoin - flypastStart), flypastCamera.y, flypastCamera.z}}};
+        const std::array<Point, 3> velocities{{{3.9f, 0, 0.35f}, {-5, 2.3f, 2.1f}, {-3.9f, 0, 0}}};
+        const Point camera = interpolate(time, times, cameras, velocities);
         if (time >= aircraftTrack) return {camera, aircraft(time), index};
         const Point groundLook{camera.x - 42.0f, 1.1f, camera.z - 28.0f};
         const Point aircraftLook = aircraft(time);
-        const float progress = segment(time, marchLiftStart, aircraftTrack);
-        const float ease = progress * progress * (3.0f - 2.0f * progress);
+        const float pan = segment(time, marchLiftStart, aircraftTrack);
+        const float shoulder = pan * (1.0f - pan);
+        // Spread the faster pan across the same window while easing in and out at both ends.
+        const float ease = smootherStep(pan) + 16.0f * shoulder * shoulder * shoulder * (0.5f - pan);
         const auto distance = [&](Point point) {
             return std::hypot(point.x - camera.x, point.y - camera.y, point.z - camera.z);
         };
@@ -201,28 +199,47 @@ inline Shot shot(float seconds) {
         const Point ball = reflectionBall;
         return {{ball.x + offset.x, ball.y + offset.y, ball.z + offset.z}, ball, index};
     }
-    constexpr float roadTurn = 6.9f;
-    constexpr float armorFront = 7.6f;
-    const auto armorLook = [&](float t) { return Point{-37.5f - 1.5f * (t - armorFront), 1.4f, paradeDepth + 9}; };
-    const std::array<float, 5> times{{0, shotTimes[1], roadTurn, armorFront, reflectionStart}};
-    const std::array<Point, 5> cameras{{{66, 38, 474},
-        {flagPoleX + 33, 34.2f, flagPoleZ + 29.4f}, {3, 16, 108},
-        {2.5f, 7.2f, paradeDepth + 12.7f}, {-9.7f, 2.5f, paradeDepth + 12.8f}}};
-    const std::array<Point, 5> velocities{{{-3, -0.3f, -36}, {-3.9f, -2.1f, -25},
-        {-4, -10, -35}, {-3, -1, 0}, {-1.5f, -0.4f, 0}}};
-    const Point flagLook{flagPoleX + 7.2f, 31.5f, flagPoleZ};
-    const std::array<Point, 5> targets{{flagLook, flagLook, armorLook(roadTurn),
-        armorLook(armorFront), armorLook(reflectionStart)}};
-    const std::array<Point, 5> targetVelocities{{{0, 0, 0}, {0, 0, 0},
-        {-1.5f, 0, 0}, {-1.5f, 0, 0}, {-1.5f, 0, 0}}};
-    Point target = interpolate(times, targets, targetVelocities);
-    if (index == 0) {
-        const float parameter = segment(time, 0, shotTimes[1]);
-        const float openingBias = 1.0f - parameter * parameter * (3.0f - 2.0f * parameter);
-        target = {flagLook.x - 81.0f * openingBias,
-                  flagLook.y + (flagHeight(time) + 4.8f - flagLook.y) * openingBias,
-                  flagPoleZ + 25.2f * openingBias};
+    constexpr Point roadEntry{0, 5.8f, paradeDepth};
+    constexpr Point roadEntryVelocity{-4.0f, -0.55f, 0};
+    constexpr Point roadExitVelocity{-0.75f, -0.10f, 0};
+    const std::array<float, 3> times{{0, shotTimes[1], armorCentered}};
+    const std::array<Point, 3> cameras{{{66, 38, 474},
+        {flagPoleX + 33, 34.2f, flagPoleZ + 29.4f}, roadEntry}};
+    const std::array<Point, 3> velocities{{{-4, -0.3f, -45}, {-6, -2, -47}, roadEntryVelocity}};
+    Point camera;
+    if (time < armorCentered) {
+        camera = interpolate(time, times, cameras, velocities);
+    } else {
+        // Integrate a smooth reduction in dolly speed once aligned with the road.
+        const float span = reflectionStart - armorCentered;
+        const float t = segment(time, armorCentered, reflectionStart);
+        const float travel = span * t * t * t * (1.0f - 0.5f * t);
+        const float age = time - armorCentered;
+        camera = {roadEntry.x + roadEntryVelocity.x * age + (roadExitVelocity.x - roadEntryVelocity.x) * travel,
+                  roadEntry.y + roadEntryVelocity.y * age + (roadExitVelocity.y - roadEntryVelocity.y) * travel,
+                  paradeDepth};
     }
-    return {interpolate(times, cameras, velocities), target, index};
+    const Point roadLook{camera.x - 40.0f, 1.4f, camera.z};
+    constexpr float roadAimEnd = armorCentered - 0.5f;
+    if (time >= roadAimEnd) return {camera, roadLook, index};
+
+    // Let go of the flag gradually before passing it, then pan toward the oncoming column.
+    constexpr float flagAimBrake = 4.5f;
+    constexpr float flagAimEase = 1.5f;
+    const float u = segment(time, flagAimBrake, flagAimBrake + flagAimEase);
+    const float aimTime = std::min(time, flagAimBrake) + flagAimEase * (u - u * u * u * (1.0f - 0.5f * u));
+    const Point aimEye = interpolate(aimTime, times, cameras, velocities);
+    const float openingBias = 1.0f - smootherStep(segment(aimTime, 0, shotTimes[1]));
+    const Point flagDirection{flagPoleX + 7.2f - 81.0f * openingBias - aimEye.x,
+        31.5f + (flagHeight(aimTime) + 4.8f - 31.5f) * openingBias - aimEye.y,
+        flagPoleZ + 25.2f * openingBias - aimEye.z};
+    const float flagDistance = std::hypot(flagDirection.x, flagDirection.y, flagDirection.z);
+    const float roadDistance = std::hypot(40.0f, roadLook.y - camera.y);
+    const float blend = smootherStep(segment(time, 4.8f, roadAimEnd));
+    const float scale = roadDistance / flagDistance;
+    const Point target = mix({camera.x + flagDirection.x * scale,
+                              camera.y + flagDirection.y * scale,
+                              camera.z + flagDirection.z * scale}, roadLook, blend);
+    return {camera, target, index};
 }
 }

@@ -5,6 +5,7 @@ in vec2 uv;
 in vec3 localPosition;
 uniform int trackSurface;
 uniform int pavingSurface;
+uniform int plazaTerrain;
 uniform vec3 paradeRoadCenter;
 uniform vec3 paradeRoadSize;
 uniform float sourceRoadPadding;
@@ -44,6 +45,12 @@ float star(vec2 point, vec2 center, float radius, float rotation) {
     return 1.0 - smoothstep(edge - 0.004, edge + 0.004, length(offset));
 }
 void main() {
+    // The exported plaza crosses the two recessed planter beds. Cut it back
+    // to their inner walls in source coordinates, including in the shadow pass.
+    if (plazaTerrain == 1 && localPosition.z > 13881.94 && localPosition.z < 24020.51 &&
+        ((localPosition.x > -9958.76 && localPosition.x < -8062.78) ||
+         (localPosition.x > 4987.10 && localPosition.x < 6883.08)))
+        discard;
     // Clear the uneven imported terrain beneath the road and its flat shoulders.
     if (pavingSurface == 1 && all(lessThan(abs(worldPosition.xz - paradeRoadCenter.xz),
         paradeRoadSize.xz * 0.5 + vec2(0.0, sourceRoadPadding))))
